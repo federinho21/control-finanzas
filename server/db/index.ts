@@ -56,6 +56,16 @@ CREATE TABLE IF NOT EXISTS document_chunks (
   embedding TEXT NOT NULL,
   FOREIGN KEY (document_id) REFERENCES documents(id)
 );
+CREATE TABLE IF NOT EXISTS cuotas (
+  id TEXT PRIMARY KEY,
+  nombre TEXT NOT NULL,
+  frecuencia TEXT NOT NULL,
+  monto TEXT NOT NULL,
+  categoria TEXT NOT NULL,
+  ultimo_pago TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL
+);
 `)
 
 // Safely adds columns for existing databases where the table was created earlier.
@@ -70,6 +80,8 @@ function safeAlter(sql: string) {
 safeAlter('ALTER TABLE documents ADD COLUMN rock_id TEXT')
 safeAlter('ALTER TABLE documents ADD COLUMN temp_id TEXT')
 safeAlter("ALTER TABLE sprints ADD COLUMN status TEXT NOT NULL DEFAULT 'planned'")
+safeAlter("ALTER TABLE tasks ADD COLUMN monto TEXT NOT NULL DEFAULT '0'")
+safeAlter("ALTER TABLE tasks ADD COLUMN tipo TEXT NOT NULL DEFAULT 'gasto'")
 
 export const db = drizzle(sqlite, { schema })
 export const rawDb = sqlite

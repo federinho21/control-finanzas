@@ -73,7 +73,7 @@ function onUploaded(payload: { filename: string; chunks: number }) {
   messages.value.push({
     id: crypto.randomUUID(),
     role: 'assistant',
-    content: `**${payload.filename}** has been processed and is ready to use. Here's what you can do:\n- Ask questions about the document content\n- Ask me to generate a plan based on it\n- Reference it when reviewing strategy decisions`,
+    content: `**${payload.filename}** ha sido procesado y está listo. Ahora puedes:\n- Hacer preguntas sobre el contenido del documento (factura, extracto, presupuesto)\n- Pedir que genere un presupuesto basado en él\n- Referenciarlo al revisar decisiones financieras`,
     createdAt: new Date().toISOString()
   })
 }
@@ -145,9 +145,9 @@ watch(
 
 <template>
   <section class="flex flex-col flex-1 h-full min-h-0 bg-transparent">
-    <div class="shrink-0 pb-4 border-b border-slate-200 dark:border-slate-700">
-      <h1 class="m-0 text-xl font-semibold text-slate-900 dark:text-slate-100">Scrum Assistant</h1>
-      <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Conversational control center for Rocks, Sprints, and Tasks</p>
+    <div class="shrink-0 pb-4 border-b border-slate-200/15">
+      <h1 class="m-0 text-xl font-semibold text-slate-100">Financial Assistant</h1>
+      <p class="mt-1 text-sm text-slate-400">Centro de control conversacional para movimientos, cuotas y presupuestos</p>
     </div>
 
     <div class="flex-1 min-h-0 flex flex-col">
@@ -186,12 +186,13 @@ watch(
   align-items: center;
   gap: 5px;
   padding: 10px 14px;
-  background: #F1F5F9;
-  border: 1px solid #E2E8F0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 16px;
   border-bottom-left-radius: 4px;
   width: fit-content;
-  box-shadow: 0 1px 3px rgb(15 23 42 / 0.06);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
 }
 
 .dot {
@@ -199,7 +200,7 @@ watch(
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #3B82F6;
+  background: #A78BFA;
   animation: bounce 1.2s infinite ease-in-out;
 }
 

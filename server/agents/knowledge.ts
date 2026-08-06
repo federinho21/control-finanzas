@@ -28,11 +28,13 @@ export async function answerWithRag(query: string) {
 
   const model = new ChatGoogleGenerativeAI({
     apiKey,
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.6-flash',
     temperature: 0.2
   })
 
   const response = await model.invoke(`
+The user is named Fede. Always address them as Fede.
+
 Answer in concise, and following the same language as the question. If uncertain, say so clearly.
 
 Question:

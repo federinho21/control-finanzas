@@ -20,4 +20,5 @@ export interface ChatMessage {
   proposedTasks?: ProposedTask[]
   proposedPlan?: ProposedPlan
   actions?: UiAction[]
+  isWelcome?: boolean
 }

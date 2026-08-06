@@ -9,10 +9,15 @@ import { useGeminiApiKey } from '~~/server/composables/useGeminiApiKey'
 import { logger } from '~~/server/utils/logger'
 import {
   batchCreateTasks,
+  createCuota,
   createRock,
   createSprint,
+  deleteCuota,
   deleteRock,
   listBacklog,
+  listCuotas,
+  markCuotaPagada,
+  monthlySummary,
   queryRock,
   querySprint,
   queryTask,
@@ -55,11 +60,13 @@ async function summarizeWithLLM(context: string, userQuestion: string): Promise<
   const apiKey = useGeminiApiKey()
   const model = new ChatGoogleGenerativeAI({
     apiKey,
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.6-flash',
     temperature: 0.3
   })
 
-  const response = await model.invoke(`You are a helpful Scrum Assistant. The user asked: "${userQuestion}"
+  const response = await model.invoke(`The user is named Fede. Always address them as Fede.
+
+You are a helpful Personal Finance Assistant. The user asked: "${userQuestion}"
 
 Here is the structured data retrieved from the database (JSON):
 ${context}
@@ -70,7 +77,8 @@ Rules for your response:
 - Use markdown to structure your response: **bold** for labels and key values, bullet lists for multiple items, and ## headers for sections when there are 3 or more distinct sections.
 - Keep responses concise. Avoid excessive headers for simple single-entity queries.
 - Format all dates as MM/DD/YYYY.
-- Status values must be title-cased words: "Pending", "In Progress", "Completed", "On Hold", "Active", "Blocked", "Planned". Never show raw snake_case like "in_progress".
+- Format monetary amounts with the ₡ symbol and two decimals (e.g. ₡1,250.00).
+- Status values must be title-cased words: "Pending", "In Progress", "Completed", "Active", "Paused". Never show raw snake_case like "in_progress".
 - Priority values must be capitalized: "High", "Medium", "Low". Never uppercase like "HIGH".
 - Include all relevant fields from the data.
 - Do not invent or add information that is not in the provided data.`)
@@ -491,12 +499,14 @@ async function handleModifyPlan(input: DataOperationInput) {
   const apiKey = useGeminiApiKey()
   const model = new ChatGoogleGenerativeAI({
     apiKey,
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.6-flash',
     temperature: 0.2
   })
 
   const planJson = JSON.stringify(entry.data.plan, null, 2)
-  const response = await model.invoke(`You are modifying a proposed plan based on user instructions.
+  const response = await model.invoke(`The user is named Fede. Always address them as Fede.
+
+You are modifying a proposed plan based on user instructions.
 
 Current plan (JSON):
 ${planJson}
@@ -537,6 +547,98 @@ Instructions:
   }
 }
 
+// Handles 'create_cuota' operations.
+async function handleCreateCuota(input: DataOperationInput) {
+  const chunks = input.message.split('|').map((value) => value.trim())
+  if (chunks.length < 5) {
+    return {
+      message: 'Format to create a cuota: create cuota | Name | mensual/anual | Amount | Category'
+    }
+  }
+
+  const [, rawNombre, rawFrecuencia, rawMonto, rawCategoria] = chunks
+  const frecuencia = (rawFrecuencia ?? '').toLowerCase()
+  if (frecuencia !== 'mensual' && frecuencia !== 'anual') {
+    return { message: 'Invalid frequency. Use "mensual" or "anual".' }
+  }
+
+  const monto = Number(String(rawMonto ?? '').replace(',', '.'))
+  if (!Number.isFinite(monto) || monto <= 0) {
+    return { message: 'Invalid amount. Expected a positive number.' }
+  }
+
+  try {
+    const created = await createCuota({
+      nombre: rawNombre ?? '',
+      frecuencia,
+      monto: String(monto),
+      categoria: rawCategoria ?? ''
+    })
+    logger.info('DataAgent', `cuota created id=${created.id}`)
+    return { message: `Cuota created successfully: ${created.id}`, refreshBacklog: true }
+  } catch (error) {
+    logger.warn('DataAgent', `create_cuota failed reason="${error instanceof Error ? error.message : 'unknown'}"`)
+    return { message: 'Could not create the cuota right now. Please try again.' }
+  }
+}
+
+// Handles 'list_cuotas' operations.
+async function handleListCuotas() {
+  const cuotas = await listCuotas()
+  if (!cuotas.length) {
+    return { message: 'No cuotas fijas registered yet. Use: create cuota | Name | mensual/anual | Amount | Category' }
+  }
+
+  const summary = cuotas.map((c) => `- ${c.id} · ${c.nombre} · ${c.frecuencia} · ₡${Number(c.monto).toFixed(2)}`).join('\n')
+  return { message: `Current cuotas fijas:\n${summary}` }
+}
+
+// Handles 'mark_cuota_pagada' operations.
+async function handleMarkCuotaPagada(input: DataOperationInput) {
+  const cuotaId = input.taskId ?? (typeof input.payload?.cuotaId === 'string' ? input.payload.cuotaId : undefined)
+  if (!cuotaId) {
+    return { message: 'Please tell me which cuota to mark as paid. Example: "mark cuota U-ABCD as paid"' }
+  }
+
+  const rockId = typeof input.payload?.rockId === 'string' ? input.payload.rockId : undefined
+  try {
+    const updated = await markCuotaPagada({ cuotaId, rockId })
+    logger.info('DataAgent', `cuota marked as paid id=${updated.id}`)
+    return { message: `Cuota ${updated.id} (${updated.nombre}) marked as paid and registered as a gasto.`, refreshBacklog: true }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : 'Could not mark the cuota as paid.'
+    return { message: reason }
+  }
+}
+
+// Handles 'delete_cuota' operations.
+async function handleDeleteCuota(input: DataOperationInput) {
+  const cuotaId = input.taskId ?? (typeof input.payload?.cuotaId === 'string' ? input.payload.cuotaId : undefined)
+  if (!cuotaId) {
+    return { message: 'Please provide the cuota ID. Example: delete cuota U-ABCD' }
+  }
+
+  const result = await deleteCuota(cuotaId)
+  logger.info('DataAgent', `delete_cuota result deleted=${result.deleted}`)
+  return {
+    message: result.deleted ? `Cuota ${cuotaId} deleted.` : `Cuota ${cuotaId} does not exist.`,
+    refreshBacklog: result.deleted
+  }
+}
+
+// Handles 'monthly_report' operations.
+async function handleMonthlyReport(input: DataOperationInput) {
+  const monthKey = typeof input.payload?.month === 'string' ? input.payload.month : input.message.match(/\d{4}-\d{2}/)?.[0]
+  if (!monthKey) {
+    return { message: 'Please specify the month as YYYY-MM. Example: "show summary for 2026-08"' }
+  }
+
+  const summary = await monthlySummary(monthKey)
+  return {
+    message: `Summary for ${summary.month}:\n\n- **Ingresos:** ₡${summary.ingresos.toFixed(2)}\n- **Gastos:** ₡${summary.gastos.toFixed(2)}\n- **Retiros:** ₡${summary.retiros.toFixed(2)}\n- **Balance:** ₡${summary.balance.toFixed(2)}`
+  }
+}
+
 /**
  * Runs a data operation (CRUD actions on rocks, sprints, tasks) based on the operation type.
  * @param input - Input containing session ID, operation type, message, entity IDs, and payload
@@ -559,10 +661,15 @@ export async function runDataOperation(input: DataOperationInput) {
     case 'update_sprint_status': return handleUpdateSprintStatus(input)
     case 'update_task_status':   return handleUpdateTaskStatus(input)
     case 'modify_plan':          return handleModifyPlan(input)
+    case 'create_cuota':         return handleCreateCuota(input)
+    case 'list_cuotas':          return handleListCuotas()
+    case 'mark_cuota_pagada':    return handleMarkCuotaPagada(input)
+    case 'delete_cuota':         return handleDeleteCuota(input)
+    case 'monthly_report':       return handleMonthlyReport(input)
 
     default:
       return {
-        message: 'Could not interpret the data operation. Use: create rock, create sprint, delete rock, list backlog.'
+        message: 'Could not interpret the data operation. Use: create rock, create sprint, delete rock, list backlog, create cuota, mark cuota paid, monthly report.'
       }
   }
 }

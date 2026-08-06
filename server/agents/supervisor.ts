@@ -25,6 +25,11 @@ export interface AgentIntent {
   | 'query_sprint'
   | 'query_task'
   | 'modify_plan'
+  | 'create_cuota'
+  | 'list_cuotas'
+  | 'mark_cuota_pagada'
+  | 'delete_cuota'
+  | 'monthly_report'
   confidence?: number
   needsClarification?: boolean
   clarificationQuestion?: string
@@ -184,6 +189,11 @@ function isIntentOperation(value: unknown): value is IntentOperation {
     || value === 'query_sprint'
     || value === 'query_task'
     || value === 'modify_plan'
+    || value === 'create_cuota'
+    || value === 'list_cuotas'
+    || value === 'mark_cuota_pagada'
+    || value === 'delete_cuota'
+    || value === 'monthly_report'
 }
 
 /**
@@ -251,7 +261,7 @@ function defaultOperationForRoute(route: RouteName): IntentOperation | undefined
  * @returns A clarification question for the user
  */
 function buildClarificationQuestion(_message: string): string {
-  return 'Could you share what you want to do next? I can generate a plan, break work into tasks, query documents, or update items.'
+  return 'Could you share what you want to do next? I can generate a monthly budget, register movements, manage cuotas fijas, query financial documents, or show a monthly summary.'
 }
 
 /**
@@ -288,7 +298,9 @@ function buildSafeFallbackIntent(message: string): AgentIntent {
  */
 function buildClassifierPrompt(message: string, hasPendingPlan: boolean): string {
   return `
-You are an intent router for a product planning assistant.
+The user is named Fede. Always address them as Fede.
+
+You are an intent router for a personal finance assistant.
 Decide the best flow for the user message.
 
 Return strict JSON only, with no markdown and no extra text.
@@ -296,7 +308,7 @@ Return strict JSON only, with no markdown and no extra text.
 JSON schema:
 {
   "route": "planner|strategy|data|knowledge|retro|END",
-  "operation": "create_rock|create_sprint|delete_rock|list_backlog|approve_tasks|approve_plan|confirm_delete|rag_query|plan_tasks|generate_plan|update_sprint_status|update_task_status|generate_retrospective|query_rock|query_sprint|query_task|modify_plan|null",
+  "operation": "create_rock|create_sprint|delete_rock|list_backlog|approve_tasks|approve_plan|confirm_delete|rag_query|plan_tasks|generate_plan|update_sprint_status|update_task_status|generate_retrospective|query_rock|query_sprint|query_task|modify_plan|create_cuota|list_cuotas|mark_cuota_pagada|delete_cuota|monthly_report|null",
   "confidence": 0.0,
   "needsClarification": true,
   "clarificationQuestion": "string",
@@ -315,17 +327,22 @@ use route "data" with operation "modify_plan".
 
 Rules:
 - Do not choose list_backlog unless the user explicitly asks to list/show/see current backlog items.
-- Use route strategy with generate_plan for any free-form planning request (goals, objectives, initiatives) that does NOT contain explicit Rock IDs (R-XXXX) or Sprint IDs (S-XXXX).
+- Use route strategy with generate_plan for any free-form budgeting or planning request (monthly budget, savings goal, financial plan) that does NOT contain explicit Account IDs (R-XXXX) or Period IDs (S-XXXX).
 - Use route planner with plan_tasks ONLY when the user asks to break work into tasks AND provides explicit R-XXXX and S-XXXX identifiers.
-- If the message looks like a planning goal but has no IDs, always prefer strategy over planner.
+- If the message looks like a budgeting goal but has no IDs, always prefer strategy over planner.
 - Short acknowledgements or ambiguous messages should use route END with needsClarification=true and a helpful clarificationQuestion.
-- Use route knowledge with rag_query for questions about documents, transcripts, or "why/blocked" analysis.
-- Use route data with update_sprint_status when the user wants to change the status of a sprint and provides a Sprint ID (S-XXXX). Valid statuses: planned, in_progress, completed, on_hold.
-- Use route data with update_task_status when the user wants to change the status of a task and provides a Task ID (T-XXXX). Valid statuses: pending, in_progress, completed.
-- Use route data with operation "query_rock" when the user asks about the status, details, progress, or description of a specific Rock (must include R-XXXX).
-- Use route data with operation "query_sprint" when the user asks about the status, details, tasks, or progress of a specific Sprint (must include S-XXXX).
-- Use route data with operation "query_task" when the user asks about the status, details, owner, or deadline of a specific Task (must include T-XXXX).
-- Use route retro with generate_retrospective when user asks for sprint retrospective, sprint review, retro summary, or sprint recap. Must include a Sprint ID (S-XXXX) in the message.
+- Use route knowledge with rag_query for questions about uploaded financial documents (bank statements, invoices, budgets), or "why/analysis" questions.
+- Use route data with update_sprint_status when the user wants to change the status of a period and provides a Sprint ID (S-XXXX). Valid statuses: planned, in_progress, completed, on_hold.
+- Use route data with update_task_status when the user wants to change the status of a movement and provides a Task ID (T-XXXX). Valid statuses: pending, in_progress, completed.
+- Use route data with operation "query_rock" when the user asks about the status, details, or progress of a specific account/category (must include R-XXXX).
+- Use route data with operation "query_sprint" when the user asks about the details or movements of a specific period (must include S-XXXX).
+- Use route data with operation "query_task" when the user asks about the details of a specific movement (must include T-XXXX).
+- Use route data with operation "create_cuota" when the user wants to register a fixed subscription/cuota. Message format: create cuota | Name | mensual/anual | Amount | Category.
+- Use route data with operation "list_cuotas" when the user asks to show/list the fixed subscriptions (cuotas).
+- Use route data with operation "mark_cuota_pagada" when the user wants to mark a cuota as paid. Must include a cuota ID (U-XXXX).
+- Use route data with operation "delete_cuota" when the user wants to delete a cuota. Must include a cuota ID (U-XXXX).
+- Use route data with operation "monthly_report" when the user asks for a monthly summary, balance report, or financial overview for a month (YYYY-MM).
+- Use route retro with generate_retrospective when user asks for a monthly analysis/review or period retrospective. Must include a Sprint ID (S-XXXX) in the message.
 - Use route "data" with operation "modify_plan" ONLY when IMPORTANT CONTEXT says a plan is pending AND the user wants to add/remove/change sprints or tasks in that plan.
 - When operation is "update_sprint_status", extract the intended status from the message if mentioned. Valid values: planned, in_progress, completed, on_hold. Set "status" to null if not mentioned.
 - When operation is "update_task_status", extract the intended status from the message if mentioned. Valid values: pending, in_progress, completed. Set "status" to null if not mentioned.
@@ -347,7 +364,7 @@ async function classifyIntentWithGemini(message: string, hasPendingPlan: boolean
   const apiKey = useGeminiApiKey()
   const model = new ChatGoogleGenerativeAI({
     apiKey,
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.6-flash',
     temperature: 0
   })
 

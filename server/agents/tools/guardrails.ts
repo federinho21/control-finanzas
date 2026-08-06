@@ -15,27 +15,27 @@ export async function validateCreateTask(input: {
   deadline: string
 }): Promise<GuardrailResult> {
   if (!input.rockId) {
-    return { valid: false, reason: 'Strategic Anchor Rule: every task must include rockId.' }
+    return { valid: false, reason: 'Strategic Anchor Rule: every movement must include an account (rockId).' }
   }
 
   const rock = await db.query.rocks.findFirst({ where: eq(rocks.id, input.rockId) })
   if (!rock) {
-    return { valid: false, reason: `Rock ${input.rockId} does not exist.` }
+    return { valid: false, reason: `Account ${input.rockId} does not exist.` }
   }
 
   const sprint = await db.query.sprints.findFirst({ where: eq(sprints.id, input.sprintId) })
   if (!sprint) {
-    return { valid: false, reason: `Sprint ${input.sprintId} does not exist.` }
+    return { valid: false, reason: `Period ${input.sprintId} does not exist.` }
   }
 
   if (sprint.rockId !== input.rockId) {
-    return { valid: false, reason: `Sprint ${input.sprintId} is not linked to Rock ${input.rockId}.` }
+    return { valid: false, reason: `Period ${input.sprintId} is not linked to Account ${input.rockId}.` }
   }
 
   if (input.deadline < sprint.startDate || input.deadline > sprint.endDate) {
     return {
       valid: false,
-      reason: `Sprint Boundary Rule: deadline ${input.deadline} must be between ${sprint.startDate} and ${sprint.endDate}.`
+      reason: `Period Boundary Rule: movement date ${input.deadline} must be between ${sprint.startDate} and ${sprint.endDate}.`
     }
   }
 
@@ -48,7 +48,7 @@ export async function validateDeleteRock(input: {
 }): Promise<GuardrailResult> {
   const rock = await db.query.rocks.findFirst({ where: eq(rocks.id, input.rockId) })
   if (!rock) {
-    return { valid: false, reason: `Rock ${input.rockId} does not exist.` }
+    return { valid: false, reason: `Account ${input.rockId} does not exist.` }
   }
 
   const activeCount = await db
@@ -61,7 +61,7 @@ export async function validateDeleteRock(input: {
   if (total > 1 && !input.force) {
     return {
       valid: false,
-      reason: `Destruction Guardrail: Rock ${input.rockId} has ${total} active tasks and needs human approval before deletion.`,
+      reason: `Destruction Guardrail: Account ${input.rockId} has ${total} active movements and needs human approval before deletion.`,
       needsConfirmation: true,
       metadata: { activeTasks: total }
     }

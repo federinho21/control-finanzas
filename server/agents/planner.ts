@@ -18,18 +18,22 @@ function fallbackTasks(sprintStart: string, sprintEnd: string): ProposedTask[] {
 
   return [
     {
-      description: 'Map the current state and main pain points',
-      owner: 'Product',
+      description: 'Planificar gastos básicos del período',
+      owner: 'General',
       deadline: start,
       priority: 'high',
-      selected: true
+      selected: true,
+      monto: '0.00',
+      tipo: 'gasto'
     },
     {
-      description: 'Define executable scope and sprint risks',
-      owner: 'Tech Lead',
+      description: 'Registrar ingresos proyectados del período',
+      owner: 'Ingresos',
       deadline: end,
       priority: 'high',
-      selected: true
+      selected: true,
+      monto: '0.00',
+      tipo: 'ingreso'
     }
   ]
 }
@@ -73,24 +77,29 @@ export async function generateProposedTasks(input: {
 
     const model = new ChatGoogleGenerativeAI({
       apiKey,
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       temperature: 0.2
     })
 
     const prompt = `
-You are a Scrum Planner. Respond with valid JSON only using this exact format:
+The user is named Fede. Always address them as Fede.
+
+You are a Personal Finance Planner. Respond with valid JSON only using this exact format:
 {
   "tasks": [
-    {"description":"...","owner":"...","deadline":"MM/DD/YYYY","priority":"high|medium|low"}
+    {"description":"...","owner":"category","deadline":"MM/DD/YYYY","priority":"high|medium|low","monto":"0.00","tipo":"ingreso|gasto|retiro"}
   ]
 }
 
 Rules:
-- Generate between 3 and 6 tasks
+- Generate between 3 and 6 movements
 - Deadline must be between ${sprintStartForUser} and ${sprintEndForUser}
+- "owner" must be a spending category (e.g. Rent, Groceries, Transport, Salary)
+- "monto" is a fixed-2-decimal amount string greater than 0 (e.g. "250.00")
+- "tipo" is one of: ingreso (income), gasto (expense), retiro (withdrawal)
 - Do not add extra fields
 
-Rock:
+Account:
 - id: ${rock.id}
 - name: ${rock.name}
 - description: ${rock.description}
@@ -112,12 +121,15 @@ User request: ${input.message}
       .slice(0, 6)
       .flatMap((task) => {
         try {
+          const rawMonto = String(task.monto ?? '0').replace(',', '.')
           return [{
             description: task.description,
-            owner: task.owner || 'Team',
+            owner: task.owner || 'General',
             deadline: normalizeDateToUser(task.deadline),
             priority: task.priority || 'medium',
-            selected: true
+            selected: true,
+            monto: Number.isFinite(Number(rawMonto)) && Number(rawMonto) > 0 ? Number(rawMonto).toFixed(2) : '0.00',
+            tipo: task.tipo === 'ingreso' || task.tipo === 'retiro' ? task.tipo : 'gasto'
           }]
         } catch {
           return []

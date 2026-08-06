@@ -1,5 +1,7 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core'
 
+export type MovementType = 'ingreso' | 'gasto' | 'retiro'
+
 export const rocks = sqliteTable('rocks', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -28,6 +30,19 @@ export const tasks = sqliteTable('tasks', {
   status: text('status').notNull().$type<'pending' | 'in_progress' | 'completed' | 'on_hold'>(),
   rockId: text('rock_id').notNull(),
   sprintId: text('sprint_id').notNull(),
+  monto: text('monto').notNull().default('0'),
+  tipo: text('tipo').notNull().$type<MovementType>().default('gasto'),
+  createdAt: text('created_at').notNull()
+})
+
+export const cuotas = sqliteTable('cuotas', {
+  id: text('id').primaryKey(),
+  nombre: text('nombre').notNull(),
+  frecuencia: text('frecuencia').notNull().$type<'mensual' | 'anual'>(),
+  monto: text('monto').notNull(),
+  categoria: text('categoria').notNull(),
+  ultimoPago: text('ultimo_pago'),
+  status: text('status').notNull().$type<'active' | 'paused'>().default('active'),
   createdAt: text('created_at').notNull()
 })
 

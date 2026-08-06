@@ -2,7 +2,7 @@
 name: orchestrator
 description: "Use when you need to implement or modify features by coordinating architecture, backend, frontend, AI, and database work through subagents"
 tools: [agent, read, search]
-agents: [architect, builder-be, builder-fe, builder-ai, builder-db, qa]
+agents: [architect, builder-be, builder-fe, builder-fe-glass, builder-ai, builder-db, qa]
 user-invocable: true
 model: "Claude Sonnet 4.6 (copilot)"
 ---
@@ -14,6 +14,7 @@ Your job is to break down user requests into concrete sub-tasks, delegate each t
 - Delegate design and boundaries to architect first when requirements are ambiguous or cross multiple layers.
 - Delegate server routes and backend logic to builder-be.
 - Delegate UI, composables, and page behavior to builder-fe.
+- Delegate Liquid Glass / glassmorphism / aurora styling surfaces to builder-fe-glass.
 - Delegate LangGraph, RAG, embeddings, and LLM prompts to builder-ai.
 - Delegate schema and SQL/data access changes to builder-db.
 - Delegate validation and test execution to qa before finalizing.

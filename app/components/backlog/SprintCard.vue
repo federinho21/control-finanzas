@@ -23,31 +23,30 @@ const statusLabel = computed(() => {
 </script>
 
 <template>
-  <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
+  <div class="glass-panel glass-panel-hover overflow-hidden">
     <!-- Header -->
     <div class="flex items-center gap-2 px-4 pt-3 pb-2">
       <span
-        class="shrink-0 text-xs font-mono font-semibold text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950 hover:bg-cyan-100 dark:hover:bg-cyan-900 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+        class="shrink-0 text-xs font-mono font-semibold text-cyan-300 bg-cyan-500/15 hover:bg-cyan-500/25 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
         :title="`Get info on ${sprint.id}`"
-        @click="triggerQuery(`Give me full details about sprint ${sprint.id}`)"
+        @click="triggerQuery(`Give me full details about period ${sprint.id}`)"
       >{{ sprint.id }}</span>
-      <h3 class="m-0 text-sm font-semibold text-slate-800 dark:text-slate-100 truncate flex-1">{{ sprint.name }}</h3>
+      <h3 class="m-0 text-sm font-semibold text-slate-100 truncate flex-1">{{ sprint.name }}</h3>
     </div>
 
-    <!-- Rock link -->
+    <!-- Account link -->
     <div class="mx-4 mb-3 flex items-center gap-1.5">
-      <UIcon name="i-lucide-mountain" class="w-3.5 h-3.5 text-slate-400" />
-      <span class="text-xs text-slate-400 dark:text-slate-500">{{ sprint.rockId }}</span>
+      <UIcon name="i-lucide-wallet" class="w-3.5 h-3.5 text-slate-400" />
+      <span class="text-xs text-slate-400">{{ sprint.rockId }}</span>
     </div>
 
     <!-- Footer: date range + status badge -->
-    <div class="px-4 py-2 border-t border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between gap-2">
+    <div class="px-4 py-2 border-t border-slate-200/10 bg-white/5 flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
         <UIcon name="i-lucide-calendar-range" class="w-3.5 h-3.5 text-slate-400" />
-        <span class="text-xs text-slate-400 dark:text-slate-500">{{ formatUserDate(sprint.startDate) }} → {{ formatUserDate(sprint.endDate) }}</span>
+        <span class="text-xs text-slate-400">{{ formatUserDate(sprint.startDate) }} → {{ formatUserDate(sprint.endDate) }}</span>
       </div>
       <UBadge :color="statusColor" variant="subtle" size="sm" class="capitalize shrink-0">{{ statusLabel }}</UBadge>
     </div>
   </div>
 </template>
-

@@ -2,8 +2,10 @@ import { and, desc, eq } from 'drizzle-orm'
 import { customAlphabet } from 'nanoid'
 import type { ProposedPlan } from '~~/shared/types/plan'
 import type { ProposedTask, Task } from '~~/shared/types/task'
+import type { Cuota } from '~~/shared/types/cuota'
 import { db, rawDb } from '~~/server/db'
-import { rocks, sprints, tasks } from '~~/server/db/schema'
+import { cuotas, rocks, sprints, tasks } from '~~/server/db/schema'
+import type { MovementType } from '~~/server/db/schema'
 import { normalizeDateToDb } from '~~/shared/utils/date'
 import { validateCreateTask, validateDeleteRock } from './guardrails'
 
@@ -16,6 +18,15 @@ function nowIso() {
 function todayDbDate() {
   // Persisted date fields are stored as YYYY-MM-DD in DB.
   return normalizeDateToDb(new Date().toISOString().slice(0, 10))
+}
+
+function toAmount(value: unknown): string {
+  const raw = String(value ?? '0').replace(',', '.')
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return '0'
+  }
+  return parsed.toFixed(2)
 }
 
 export async function createRock(input: {
@@ -90,13 +101,11 @@ export async function createTask(input: {
   owner: string
   deadline: string
   priority: 'high' | 'medium' | 'low'
+  monto?: string
+  tipo?: MovementType
 }) {
   const deadline = normalizeDateToDb(input.deadline)
-  // Disallow persisting tasks with past deadlines.
-  if (deadline < todayDbDate()) {
-    throw new Error('Task deadline cannot be in the past.')
-  }
-
+  // Movements may reference past dates (historical expenses), so no past-date rejection here.
   const validation = await validateCreateTask({
     rockId: input.rockId,
     sprintId: input.sprintId,
@@ -117,6 +126,8 @@ export async function createTask(input: {
     status: 'pending',
     rockId: input.rockId,
     sprintId: input.sprintId,
+    monto: toAmount(input.monto),
+    tipo: input.tipo ?? 'gasto',
     createdAt: nowIso()
   })
 
@@ -141,7 +152,9 @@ export async function batchCreateTasks(input: {
       description: item.description,
       owner: item.owner,
       deadline: item.deadline,
-      priority: item.priority
+      priority: item.priority,
+      monto: item.monto,
+      tipo: item.tipo
     })
 
     created.push(result.id)
@@ -219,11 +232,11 @@ export async function savePlan(input: { plan: ProposedPlan }) {
         rawDb
           .prepare(
             `
-            INSERT INTO tasks (id, description, owner, deadline, priority, status, rock_id, sprint_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tasks (id, description, owner, deadline, priority, status, rock_id, sprint_id, monto, tipo, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `
           )
-          .run(taskId, task.description, task.owner, taskDeadline, task.priority, 'pending', rockId, sprintId, nowIso())
+          .run(taskId, task.description, task.owner, taskDeadline, task.priority, 'pending', rockId, sprintId, toAmount(task.monto), task.tipo ?? 'gasto', nowIso())
 
         createdTaskIds.push(taskId)
       }
@@ -372,5 +385,140 @@ export async function queryTask(taskId: string) {
     ...task,
     rock: rock ? { id: rock.id, name: rock.name, status: rock.status } : null,
     sprint: sprint ? { id: sprint.id, name: sprint.name, status: sprint.status } : null
+  }
+}
+
+// --- Cuotas fijas ---
+
+export async function createCuota(input: {
+  nombre: string
+  frecuencia: 'mensual' | 'anual'
+  monto: string
+  categoria: string
+}) {
+  const id = `U-${alphaNum()}`
+  await db.insert(cuotas).values({
+    id,
+    nombre: input.nombre,
+    frecuencia: input.frecuencia,
+    monto: toAmount(input.monto),
+    categoria: input.categoria,
+    ultimoPago: null,
+    status: 'active',
+    createdAt: nowIso()
+  })
+
+  return { id }
+}
+
+export async function listCuotas(): Promise<Cuota[]> {
+  return db.select().from(cuotas).orderBy(desc(cuotas.createdAt)) as Promise<Cuota[]>
+}
+
+export async function deleteCuota(cuotaId: string) {
+  const deleted = await db.delete(cuotas).where(eq(cuotas.id, cuotaId)).returning()
+  return { deleted: deleted.length > 0 }
+}
+
+// Marks a cuota as paid for the current period and registers it as a gasto movement.
+// If a sprint (period) matching the payment month does not exist, it is created and
+// linked to the default rock, keeping the strategic anchor guardrail satisfied.
+export async function markCuotaPagada(input: {
+  cuotaId: string
+  rockId?: string
+}) {
+  const cuota = await db.query.cuotas.findFirst({ where: eq(cuotas.id, input.cuotaId) })
+  if (!cuota) {
+    throw new Error(`Cuota ${input.cuotaId} not found.`)
+  }
+
+  const today = new Date()
+  const todayDb = todayDbDate()
+  const monthKey = todayDb.slice(0, 7)
+  const yearKey = todayDb.slice(0, 4)
+
+  // Payment window depends on frequency: full month for mensual, whole year for anual.
+  const startDate = cuota.frecuencia === 'mensual' ? `${monthKey}-01` : `${yearKey}-01-01`
+  const endDate = cuota.frecuencia === 'mensual' ? `${monthKey}-31` : `${yearKey}-12-31`
+
+  const existingSprint = await db.query.sprints.findFirst({ where: eq(sprints.startDate, startDate) })
+
+  // Resolve the rock that anchors movements: explicit rock, existing period's rock, or a default account.
+  let rockId = input.rockId ?? existingSprint?.rockId
+  if (!rockId) {
+    const fallbackRock = await createRock({
+      name: 'Gastos recurrentes',
+      description: 'Cuenta para cuotas fijas y suscripciones recurrentes.',
+      deadline: `${Number(today.getFullYear()) + 1}-12-31`
+    })
+    rockId = fallbackRock.id
+  }
+
+  const sprintId = existingSprint?.id ?? `S-${alphaNum()}`
+  if (!existingSprint) {
+    await db.insert(sprints).values({
+      id: sprintId,
+      name: cuota.frecuencia === 'mensual' ? `Período ${monthKey}` : `Período ${yearKey}`,
+      startDate,
+      endDate,
+      rockId,
+      status: 'in_progress',
+      createdAt: nowIso()
+    })
+  }
+
+  // Register the payment as a gasto movement inside the period window.
+  const description = `${cuota.nombre} (cuota ${cuota.frecuencia})`
+  const existingMovement = await db.query.tasks.findFirst({
+    where: and(eq(tasks.description, description), eq(tasks.sprintId, sprintId))
+  })
+
+  if (!existingMovement) {
+    await createTask({
+      rockId,
+      sprintId,
+      description,
+      owner: cuota.categoria,
+      deadline: todayDb,
+      priority: 'medium',
+      monto: cuota.monto,
+      tipo: 'gasto'
+    })
+  }
+
+  // Update last payment timestamp and consume the payment state.
+  const updated = await db
+    .update(cuotas)
+    .set({ ultimoPago: today.toISOString().slice(0, 10) })
+    .where(eq(cuotas.id, cuota.id))
+    .returning()
+
+  return updated[0]
+}
+
+// Returns aggregated monthly summary from movements within a period window.
+export async function monthlySummary(monthKey: string) {
+  const movements = await db.select().from(tasks).orderBy(desc(tasks.deadline))
+
+  const matching = movements.filter((m) => m.deadline.slice(0, 7) === monthKey)
+  const ingresos = matching.filter((m) => m.tipo === 'ingreso').reduce((s, m) => s + Number(m.monto), 0)
+  const gastos = matching.filter((m) => m.tipo === 'gasto').reduce((s, m) => s + Number(m.monto), 0)
+  const retiros = matching.filter((m) => m.tipo === 'retiro').reduce((s, m) => s + Number(m.monto), 0)
+
+  return {
+    month: monthKey,
+    ingresos,
+    gastos,
+    retiros,
+    balance: ingresos - gastos - retiros,
+    movements: matching.map((m) => ({
+      id: m.id,
+      description: m.description,
+      categoria: m.owner,
+      deadline: m.deadline,
+      monto: m.monto,
+      tipo: m.tipo,
+      status: m.status
+    }))
   }
 }

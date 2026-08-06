@@ -33,9 +33,9 @@ const emit = defineEmits<{
 
 const md = new MarkdownIt({ html: false, linkify: false, typographer: false })
 
-// Custom core rule: transforms R-XXXX / S-XXXX / T-XXXX tokens into clickable spans
+// Custom core rule: transforms R-XXXX / S-XXXX / T-XXXX / U-XXXX tokens into clickable spans
 md.core.ruler.push('entity_ids', (state: any) => {
-  const ID_RE = /\b([RST]-[A-Z0-9]{4})\b/g
+  const ID_RE = /\b([RSTU]-[A-Z0-9]{4})\b/g
 
   for (const blockToken of state.tokens) {
     if (blockToken.type !== 'inline' || !blockToken.children) continue
@@ -60,17 +60,18 @@ md.core.ruler.push('entity_ids', (state: any) => {
         }
 
         const id = match[1]!
-        const entityType = id.startsWith('R') ? 'rock' : id.startsWith('S') ? 'sprint' : 'task'
+        const prefix = id[0]
+        const entityType = prefix === 'R' ? 'account' : prefix === 'S' ? 'period' : prefix === 'U' ? 'cuota' : 'movement'
         const query = `Give me full details about ${entityType} ${id}`
 
         const chip = new state.Token('html_inline', '', 0)
-        // Set specific chip colors for each entity type (Rock: blue, Sprint: cyan, Task: violet) 
-        // to match the visual styling used elsewhere like the Quarter Board cards.
-        const chipClasses = entityType === 'rock'
-          ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800'
-          : entityType === 'sprint'
-            ? 'bg-cyan-50 dark:bg-cyan-950 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-900'
-            : 'bg-violet-50 dark:bg-violet-950 text-violet-600 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-900'
+        const chipClasses = entityType === 'account'
+          ? 'bg-blue-500/15 text-blue-300 hover:bg-blue-500/25'
+          : entityType === 'period'
+            ? 'bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25'
+            : entityType === 'cuota'
+              ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
+              : 'bg-violet-500/15 text-violet-300 hover:bg-violet-500/25'
         chip.content = `<span class="inline-flex items-center font-mono font-semibold text-xs px-1.5 py-0.5 rounded cursor-pointer transition-colors ${chipClasses}" data-query="${query}">${id}</span>`
         newChildren.push(chip)
 
@@ -142,14 +143,14 @@ function mapActionIcon(action: UiAction): string | undefined {
 
 const bubbleClasses = computed(() => {
   const role = props.message.role
-  if (role === 'user') return 'bg-blue-500 dark:bg-blue-400 text-white dark:text-slate-900 rounded-2xl rounded-br-sm ml-auto'
-  if (role === 'error') return 'bg-red-100 dark:bg-red-950 border border-red-300 dark:border-red-700 text-red-900 dark:text-red-300 rounded-2xl rounded-bl-sm'
-  if (role === 'warning') return 'bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-700 text-amber-900 dark:text-amber-300 rounded-2xl rounded-bl-sm'
-  if (role === 'status') return 'bg-slate-50 dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600 text-slate-400 dark:text-slate-500 rounded-2xl rounded-bl-sm text-sm'
-  if (role === 'judge') return 'bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 rounded-2xl rounded-bl-sm'
-  if (role === 'guardrail') return 'bg-red-50 dark:bg-red-950/50 border border-red-300 dark:border-red-700 text-red-900 dark:text-red-200 rounded-2xl rounded-bl-sm'
-  // assistant default
-  return 'bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 rounded-2xl rounded-bl-sm'
+  if (role === 'user') return 'bg-gradient-to-br from-zinc-600 to-zinc-800 text-white rounded-2xl rounded-br-sm ml-auto shadow-lg shadow-black/30'
+  if (role === 'error') return 'bg-rose-500/15 border border-rose-400/40 text-rose-200 rounded-2xl rounded-bl-sm'
+  if (role === 'warning') return 'bg-amber-500/15 border border-amber-400/40 text-amber-200 rounded-2xl rounded-bl-sm'
+  if (role === 'status') return 'bg-slate-400/10 border border-dashed border-slate-400/30 text-slate-400 rounded-2xl rounded-bl-sm text-sm'
+  if (role === 'judge') return 'bg-amber-500/15 border border-amber-400/40 text-amber-200 rounded-2xl rounded-bl-sm'
+  if (role === 'guardrail') return 'bg-rose-500/15 border border-rose-400/40 text-rose-200 rounded-2xl rounded-bl-sm'
+  // assistant default — night glass bubble
+  return 'bg-white/6 border border-white/10 text-slate-100 rounded-2xl rounded-bl-sm backdrop-blur-xl'
 })
 
 const rowClasses = computed(() => {
@@ -169,7 +170,7 @@ function onAction(action: UiAction) {
 
 <template>
   <div :class="rowClasses">
-    <div :class="['max-w-[78%] px-3.5 py-2.5 shadow-sm', bubbleClasses]">
+    <div :class="['max-w-[78%] px-3.5 py-2.5 shadow-sm', bubbleClasses, { 'animate-welcome': message.isWelcome }]">
       <UIcon v-if="message.role === 'judge'" name="i-lucide-alert-triangle"
         class="inline-block w-4 h-4 mr-1.5 mb-1 text-amber-500 shrink-0" />
       <UIcon v-if="message.role === 'guardrail'" name="i-lucide-shield-alert"
@@ -184,27 +185,31 @@ function onAction(action: UiAction) {
 
       <div v-if="editableTasks.length" class="mt-3 flex flex-col gap-2.5">
         <div v-for="(task, index) in editableTasks" :key="index"
-          class="border border-slate-200 dark:border-slate-600 rounded-xl p-2.5 bg-white dark:bg-slate-800">
+          class="border border-white/10 rounded-xl p-2.5 bg-white/5">
           <div class="flex items-center gap-2 mb-2">
             <USwitch v-model="task.selected" />
-            <span class="text-sm text-slate-500 dark:text-slate-400 font-medium">Include</span>
+            <span class="text-sm text-slate-400 font-medium">Include</span>
           </div>
-          <UInput v-model="task.description" class="w-full" placeholder="Task description" />
-          <div class="grid gap-2 mt-2" style="grid-template-columns: 1fr 180px 140px;">
-            <UInput v-model="task.owner" placeholder="Owner" />
-            <UPopover>
-              <UButton variant="outline" color="neutral" icon="i-lucide-calendar" class="w-full justify-start">
-                {{ task.deadline || 'Pick date' }}
-              </UButton>
-              <template #content>
-                <UCalendar :model-value="toCalendarDate(task.deadline)"
-                  @update:model-value="(val: any) => { if (val) task.deadline = fromCalendarDate(val) }" />
-              </template>
-            </UPopover>
+          <UInput v-model="task.description" class="w-full" placeholder="Movement description" />
+          <div class="grid gap-2 mt-2" style="grid-template-columns: 1fr 120px 130px 140px;">
+            <UInput v-model="task.owner" placeholder="Category" />
+            <UInput v-model="task.monto" placeholder="Amount" type="number" />
+            <USelect v-model="task.tipo"
+              :items="[{ label: 'Ingreso', value: 'ingreso' }, { label: 'Gasto', value: 'gasto' }, { label: 'Retiro', value: 'retiro' }]"
+              value-key="value" placeholder="Type" />
             <USelect v-model="task.priority"
               :items="[{ label: 'High', value: 'high' }, { label: 'Medium', value: 'medium' }, { label: 'Low', value: 'low' }]"
               value-key="value" placeholder="Priority" />
           </div>
+          <UPopover class="mt-2">
+            <UButton variant="outline" color="neutral" icon="i-lucide-calendar" class="w-full justify-start">
+              {{ task.deadline || 'Pick date' }}
+            </UButton>
+            <template #content>
+              <UCalendar :model-value="toCalendarDate(task.deadline)"
+                @update:model-value="(val: any) => { if (val) task.deadline = fromCalendarDate(val) }" />
+            </template>
+          </UPopover>
         </div>
       </div>
 

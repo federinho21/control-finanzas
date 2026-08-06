@@ -71,7 +71,7 @@ const supervisorNode = async (state: typeof AgentState.State) => {
   // When routing ends early, return a direct clarification prompt for the chat response.
   const response = intent.route === 'END'
     ? (intent.clarificationQuestion
-      || 'Could you clarify what you want to do next? I can generate a plan, plan tasks, query knowledge, or list backlog on request.')
+      || 'Could you clarify what you want to do next? I can generate a monthly budget, register movements, manage cuotas fijas, query knowledge, or list backlog on request.')
     : state.response
 
   return {
@@ -105,12 +105,12 @@ const strategyNode = async (state: typeof AgentState.State) => {
   })
 
   return {
-    response: 'A full plan preview is ready. Review it in the Quarter Board preview, then approve to persist it.',
+    response: 'A full budget plan preview is ready. Review it in the preview, then approve to persist it.',
     proposedPlan: plan,
     actionRequest: {
       type: 'approve_plan',
       actionId,
-      prompt: 'Do you want to approve this full plan?'
+      prompt: 'Do you want to approve this monthly budget plan?'
     }
   }
 }
@@ -149,12 +149,12 @@ const plannerNode = async (state: typeof AgentState.State) => {
   })
 
   return {
-    response: `Generated ${tasks.length} proposed tasks. Review and approve them to save.`,
+    response: `Generated ${tasks.length} proposed movements. Review and approve them to save.`,
     proposedTasks: tasks,
     actionRequest: {
       type: 'approve_tasks',
       actionId,
-      prompt: 'Do you want to approve these tasks?'
+      prompt: 'Do you want to approve these movements?'
     }
   }
 }

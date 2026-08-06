@@ -25,7 +25,7 @@ export async function judgeTaskCompletion(taskId: string): Promise<JudgeResult> 
     return { isConsistent: true }
   }
 
-  const matches = await searchDocuments(`${task.description} blocked incomplete pending`, 4)
+  const matches = await searchDocuments(`${task.description} pago factura comprobante`, 4)
   logger.info('Judge', `found ${matches.length} relevant chunk(s)`)
   if (matches.length === 0) {
     return { isConsistent: true }
@@ -38,15 +38,18 @@ export async function judgeTaskCompletion(taskId: string): Promise<JudgeResult> 
   const apiKey = useGeminiApiKey()
   const model = new ChatGoogleGenerativeAI({
     apiKey,
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.6-flash',
     temperature: 0.1
   })
 
-  const prompt = `You are a data-consistency judge. A task has just been marked as "completed" in the system.
-Your job is to check if uploaded documents or meeting transcripts contradict this status.
+  const prompt = `The user is named Fede. Always address them as Fede.
 
-Task: "${task.description}"
-Owner: ${task.owner}
+You are a financial data-consistency judge. A movement has just been marked as "completed" (paid) in the system.
+Your job is to check if uploaded financial documents (bank statements, invoices, receipts) contradict this status.
+
+Movement: "${task.description}"
+Category: ${task.owner}
+Amount: ₡${Number(task.monto ?? 0).toFixed(2)}
 
 Relevant document excerpts:
 ${context}
@@ -57,7 +60,7 @@ Answer with a JSON object only, no explanation:
   "warning": "Short explanation if not consistent, otherwise null"
 }
 
-Return isConsistent: false only if there is strong evidence in the documents that this specific task is still blocked, pending, or not done. Return isConsistent: true if uncertain.`
+Return isConsistent: false only if there is strong evidence in the documents that this specific payment is still pending, unpaid, or was not made. Return isConsistent: true if uncertain.`
 
   const response = await model.invoke(prompt)
   const text = String(response.content).trim()

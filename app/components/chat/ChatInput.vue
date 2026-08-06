@@ -90,7 +90,7 @@ function onTextareaKeydown(event: KeyboardEvent) {
       :rows="1"
       autoresize
       :maxrows="8"
-      placeholder="Write an instruction for the Scrum Assistant"
+      placeholder="Escribe una instrucción para el Asistente Financiero"
       data-gramm="false"
       data-gramm_editor="false"
       @keydown="onTextareaKeydown"

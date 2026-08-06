@@ -30,6 +30,25 @@ function parseSseChunk(buffer: string): { events: Array<Record<string, any>>; re
   return { events, rest }
 }
 
+// Builds the personalized welcome message with the current date/time in Costa Rica (UTC-6).
+function buildWelcomeMessage(): ChatMessage {
+  const crFormatter = new Intl.DateTimeFormat('es-CR', {
+    timeZone: 'America/Costa_Rica',
+    dateStyle: 'full',
+    timeStyle: 'short'
+  })
+  const nowCr = crFormatter.format(new Date())
+
+  return {
+    id: nanoid(),
+    role: 'assistant',
+    isWelcome: true,
+    content:
+      `👋 ¡Hola, **Fede**! Soy tu **Asistente Financiero**.\n🕐 Hoy es **${nowCr}** en Costa Rica.\n\n**¿En qué te puedo ayudar hoy?**\n\n📋 **Presupuesto**\n• Describe un objetivo mensual y genero un plan de presupuesto completo (cuenta → períodos → movimientos)\n• Genera movimientos para una cuenta y período existentes\n• Mientras revisas el plan, pídeme modificarlo (ej. "agrega un período" o "quita el último movimiento")\n\n✅ **Movimientos**\n• Registra un gasto/ingreso/retiro y lo clasifico por categoría\n• Consulta el resumen del mes: "muéstrame el balance de 2026-08"\n• Marca un movimiento como pagado\n\n🔁 **Cuotas fijas**\n• Registra suscripciones: \`create cuota | Netflix | mensual | 5000 | Streaming\`\n• Marca una cuota como pagada (se registra como gasto automáticamente)\n\n🔍 **Consultas & RAG**\n• "Cuéntame sobre R-0001" o "¿Qué hay en S-0003?"\n• Sube un .txt o .pdf (factura, extracto bancario) y pregúntale por su contenido\n\n📈 **Análisis mensual**\n• Pide un análisis del mes (ej. "generate retro for S-0001")\n\n⚡ **Ejemplos**\n• "Crea un presupuesto para agosto"\n• "Cuéntame sobre R-0001"\n• "Marca la cuota U-0001 como pagada"`,
+    createdAt: new Date().toISOString()
+  }
+}
+
 /**
  * Manages chat session state, message history, and interactions with the AI assistant.
  * 
@@ -37,15 +56,7 @@ function parseSseChunk(buffer: string): { events: Array<Record<string, any>>; re
  */
 export function useChat() {
   const sessionId = useState<string>('chat-session-id', () => crypto.randomUUID())
-  const messages = useState<ChatMessage[]>('chat-messages', () => [
-    {
-      id: nanoid(),
-      role: 'assistant',
-      content:
-        `👋 Hi! I'm your Scrum Assistant. Here's what I can help you with:\n\n📋 **Planning**\n• Describe a quarterly goal and I'll generate a full Rock → Sprint → Task plan\n• Generate tasks for an existing Rock and Sprint\n• While reviewing a plan preview, ask me to modify it (e.g. "add a sprint" or "remove the last task")\n\n✅ **Backlog Management**\n• Create Rocks: \`create rock | Name | Description | MM/DD/YYYY\`\n• Create Sprints: \`create sprint | R-XXXX | Name | MM/DD/YYYY | MM/DD/YYYY\`\n• Update task status (pending → in progress → completed)\n• Delete a Rock (with confirmation if it has active tasks)\n\n🔍 **Query & Knowledge**\n• Ask about any entity: "Tell me about R-0001" or "What tasks are in S-0003?"\n• Upload a .txt or .pdf document and ask questions about its content\n• Ask why a Rock is blocked or what a team is working on\n\n📊 **Sprint Retrospective**\n• Ask for a retrospective summary of any sprint (e.g. "generate retro for S-0001")\n\n📈 **Dashboard**\n• Visit the Dashboard page for KPI cards and visual charts on rocks, sprints, and tasks\n\n⚡ **Examples**\n• "Plan a rock to launch the new onboarding flow by Q3"\n• "Tell me about R-0001"\n• "Mark task T-0015 as in progress"\n• "Generate retro for S-0002"`,
-      createdAt: new Date().toISOString()
-    }
-  ])
+  const messages = useState<ChatMessage[]>('chat-messages', () => [buildWelcomeMessage()])
   const pending = useState<boolean>('chat-pending', () => false)
   const reconnecting = useState<boolean>('chat-reconnecting', () => false)
 

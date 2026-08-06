@@ -31,6 +31,12 @@ Agent workflow
 
 ## Recent Feature Additions
 
+### Finance Domain + Liquid Glass Frontend
+- The app has been adapted from Rocks/Sprints/Tasks planning to a **personal finance controller** (movimientos, cuotas fijas, resumen mensual).
+- Frontend: Liquid Glass design system (glassmorphism + aurora gradients). Use `builder-fe-glass` for UI styling work. Glass panel utility: `glass-panel` in `app/assets/css/main.css`.
+- Financial color semantics: ingresos=emerald, gastos=rose, retiros=amber, balance=cyan/rose, brand=violet.
+- IDs: R-XXXX (cuenta), S-XXXX (período), T-XXXX (movimiento), U-XXXX (cuota).
+
 ### Executive Dashboard (`/dashboard`)
 - Page: `app/pages/dashboard.vue` — fetches `/api/dashboard` and shows KPI cards, task progress, rocks completion bars, and sprints overview
 - API: `server/api/dashboard.get.ts` — returns rocks with completion %, sprints with task breakdown, headcount (unique owners excluding "TBD"), and task counts by status

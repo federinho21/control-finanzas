@@ -114,18 +114,23 @@ function normalizeTask(
   sprintEndDb: string
 ): ProposedTask {
   const task = (value ?? {}) as Partial<ProposedTask>
-  const description = String(task.description ?? '').trim() || 'Define implementation task'
-  const owner = String(task.owner ?? '').trim() || 'Team'
+  const description = String(task.description ?? '').trim() || 'Movimiento financiero'
+  const owner = String(task.owner ?? '').trim() || 'General'
   const rawDeadlineDb = sanitizeToDbDate(task.deadline, fallbackDeadlineDb)
   const windowStartDb = sprintStartDb > todayDb ? sprintStartDb : todayDb
   const deadlineDb = clampDbDate(rawDeadlineDb, windowStartDb, sprintEndDb)
+  const rawMonto = String(task.monto ?? '0').replace(',', '.')
+  const monto = Number.isFinite(Number(rawMonto)) && Number(rawMonto) > 0 ? Number(rawMonto).toFixed(2) : '0.00'
+  const tipo = task.tipo === 'ingreso' || task.tipo === 'retiro' ? task.tipo : 'gasto'
 
   return {
     description,
     owner,
     deadline: normalizeDateToUser(deadlineDb),
     priority: normalizePriority(task.priority),
-    selected: task.selected !== false
+    selected: task.selected !== false,
+    monto,
+    tipo
   }
 }
 
@@ -292,8 +297,8 @@ function normalizePlan(value: unknown): ProposedPlan {
 
   return {
     rock: {
-      name: String(rock.name ?? '').trim() || 'Strategic Initiative',
-      description: String(rock.description ?? '').trim() || 'AI-generated strategic plan',
+      name: String(rock.name ?? '').trim() || 'Personal Budget',
+      description: String(rock.description ?? '').trim() || 'AI-generated monthly budget plan',
       deadline: normalizeDateToUser(rockDeadlineDb)
     },
     sprints: normalizedSprints
@@ -328,14 +333,16 @@ export async function generateProposedPlan(input: {
 
   const model = new ChatGoogleGenerativeAI({
     apiKey,
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.6-flash',
     temperature: 0.2
   })
 
   const todayUserDate = toUserDate(new Date())
 
   const prompt = `
-You are a strategic product planner. Return strict JSON only, with no markdown fences and no extra text.
+The user is named Fede. Always address them as Fede.
+
+You are a personal finance planner. Return strict JSON only, with no markdown fences and no extra text.
 The user may write in any language. You must understand the user's language.
 Output ALL fields in English.
 
@@ -356,9 +363,11 @@ Output format:
       "tasks": [
         {
           "description": "string",
-          "owner": "string",
+          "owner": "category",
           "deadline": "MM/DD/YYYY",
           "priority": "high|medium|low",
+          "monto": "0.00",
+          "tipo": "ingreso|gasto|retiro",
           "selected": true
         }
       ]
@@ -366,15 +375,16 @@ Output format:
   ]
 }
 
-Date rules (strictly enforced):
-- Today is ${todayUserDate}. All dates must be on or after today.
-- rock.deadline must realistically reflect how long the initiative takes (typically 30–90 days from today).
-- Sprints must be sequential and non-overlapping, each starting where the previous one ended.
-- Every sprint.startDate must be before its sprint.endDate.
-- Every sprint.endDate must be on or before rock.deadline.
-- Sprints together should cover the full time range from today to rock.deadline.
-- Every task.deadline must be within [sprint.startDate, sprint.endDate] of the sprint it belongs to.
-- Do not place all deadlines on the same day. Distribute work across the time range.
+Financial domain rules:
+- The "rock" represents a financial account or budget goal (e.g. "Personal Budget", "Savings Goal").
+- Each "sprint" represents a monthly period (e.g. "August 2026"). 1 to 3 periods, sequential and non-overlapping.
+- Each "task" represents a budgeted movement: expenses (gasto), income (ingreso), or withdrawals (retiro).
+- "owner" must be a spending category (e.g. Rent, Groceries, Transport, Salary, Savings, Entertainment).
+- "monto" is the amount in a fixed-2-decimal string (e.g. "500.00"). Must be greater than 0.
+- Balance the movements so the budget is realistic: include both income (ingreso) and expenses (gasto).
+- Keep the account deadline 30-90 days from today. Periods must fit inside that range.
+- Every movement.deadline must be within [sprint.startDate, sprint.endDate] of the period it belongs to.
+- Do not place all deadlines on the same day. Distribute movements across the period.
 
 Other rules:
 - Include exactly 1 rock.
@@ -382,6 +392,7 @@ Other rules:
 - Include 3 to 8 tasks per sprint.
 - Use mixed priorities across each sprint (do not make all tasks high priority).
 - Always include the "selected" field for every task.
+- Always include "monto" and "tipo" for every task.
 
 User request:
 ${input.message}

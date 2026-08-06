@@ -1,9 +1,10 @@
 <template>
   <div class="app-shell">
-    <AppSidebar />
+    <AppSidebar class="hidden lg:flex" />
     <div class="app-main">
       <NuxtPage />
     </div>
+    <MobileNav class="lg:hidden" />
   </div>
 </template>
 
@@ -19,5 +20,11 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
+}
+
+@media (max-width: 1023px) {
+  .app-main {
+    padding-bottom: 64px;
+  }
 }
 </style>
