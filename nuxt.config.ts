@@ -5,6 +5,9 @@ declare const process: {
 
 import tailwindcss from '@tailwindcss/vite'
 
+// When building for Cloudflare Workers, swap the DB driver to D1.
+const cfBuild = process.env.DEPLOY_TARGET === 'cloudflare'
+
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
@@ -14,6 +17,15 @@ export default defineNuxtConfig({
     fallback: 'dark',
     classSuffix: '',
   },
+  nitro: cfBuild
+    ? {
+        preset: 'cloudflare_module',
+        alias: {
+          '~~/server/db/schema': '~~/server/db/schema',
+          '~~/server/db': '~~/server/db-cf'
+        }
+      }
+    : undefined,
   fonts: {
     families: [
       {

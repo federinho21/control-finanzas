@@ -7,9 +7,15 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "build:cf": "set DEPLOY_TARGET=cloudflare&& nuxt build",
+    "deploy": "npm run build:cf && wrangler deploy",
+    "d1:create": "wrangler d1 create control-finanzas-db",
+    "d1:migrate": "wrangler d1 migrations apply control-finanzas-db --remote",
+    "d1:migrate:local": "wrangler d1 migrations apply control-finanzas-db --local"
   },
   "dependencies": {
+    "@cloudflare/d1": "^1.4.1",
     "@langchain/community": "^1.1.27",
     "@langchain/core": "^1.1.41",
     "@langchain/google-genai": "^2.1.28",
@@ -25,7 +31,7 @@
     "drizzle-orm": "^0.45.2",
     "markdown-it": "^14.1.1",
     "nanoid": "^5.1.9",
-    "nuxt": "^4.4.2",
+    "nuxt": "^4.5.2",
     "pdf-parse": "^1.1.4",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3",

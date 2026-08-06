@@ -3,7 +3,7 @@ import { customAlphabet } from 'nanoid'
 import type { ProposedPlan } from '~~/shared/types/plan'
 import type { ProposedTask, Task } from '~~/shared/types/task'
 import type { Cuota } from '~~/shared/types/cuota'
-import { db, rawDb } from '~~/server/db'
+import { db } from '~~/server/db'
 import { cuotas, rocks, sprints, tasks } from '~~/server/db/schema'
 import type { MovementType } from '~~/server/db/schema'
 import { normalizeDateToDb } from '~~/shared/utils/date'
@@ -163,93 +163,94 @@ export async function batchCreateTasks(input: {
   return { created }
 }
 
-// Persists a full proposed plan atomically and enforces date/sprint boundary rules.
+// Persists a full proposed plan and enforces date/period boundary rules.
+// Uses pure Drizzle operations so it works on both local better-sqlite3 and Cloudflare D1.
 export async function savePlan(input: { plan: ProposedPlan }) {
-  // Persist rock, sprints, and tasks atomically so partial plans are never stored.
-  const runSavePlan = rawDb.transaction((plan: ProposedPlan) => {
-    const createdSprintIds: string[] = []
-    const createdTaskIds: string[] = []
-    const today = todayDbDate()
+  const createdSprintIds: string[] = []
+  const createdTaskIds: string[] = []
+  const today = todayDbDate()
 
-    const rockId = `R-${alphaNum()}`
-    const rockDeadline = normalizeDateToDb(plan.rock.deadline)
-    // Apply the same date constraints used by single-create APIs.
-    if (rockDeadline < today) {
-      throw new Error('Rock deadline cannot be in the past.')
-    }
+  const rockId = `R-${alphaNum()}`
+  const rockDeadline = normalizeDateToDb(input.plan.rock.deadline)
+  if (rockDeadline < today) {
+    throw new Error('Rock deadline cannot be in the past.')
+  }
 
-    rawDb
-      .prepare(
-        `
-        INSERT INTO rocks (id, name, description, deadline, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        `
-      )
-      .run(rockId, plan.rock.name, plan.rock.description, rockDeadline, 'active', nowIso())
-
-    for (const sprint of plan.sprints) {
-      const sprintId = `S-${alphaNum()}`
-      const sprintStartDate = normalizeDateToDb(sprint.startDate)
-      const sprintEndDate = normalizeDateToDb(sprint.endDate)
-
-      if (sprintStartDate < today) {
-        throw new Error('Sprint startDate cannot be in the past.')
-      }
-      if (sprintEndDate < today) {
-        throw new Error('Sprint endDate cannot be in the past.')
-      }
-      if (sprintEndDate < sprintStartDate) {
-        throw new Error('Sprint endDate must be on or after startDate.')
-      }
-
-      rawDb
-        .prepare(
-          `
-          INSERT INTO sprints (id, name, start_date, end_date, rock_id, status, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-          `
-        )
-        .run(sprintId, sprint.name, sprintStartDate, sprintEndDate, rockId, 'planned', nowIso())
-
-      createdSprintIds.push(sprintId)
-
-      for (const task of sprint.tasks) {
-        if (task.selected === false) {
-          continue
-        }
-
-        const taskDeadline = normalizeDateToDb(task.deadline)
-        if (taskDeadline < today) {
-          throw new Error('Task deadline cannot be in the past.')
-        }
-        if (taskDeadline < sprintStartDate || taskDeadline > sprintEndDate) {
-          throw new Error(
-            `Sprint Boundary Rule: deadline ${taskDeadline} must be between ${sprintStartDate} and ${sprintEndDate}.`
-          )
-        }
-
-        const taskId = `T-${alphaNum()}`
-        rawDb
-          .prepare(
-            `
-            INSERT INTO tasks (id, description, owner, deadline, priority, status, rock_id, sprint_id, monto, tipo, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `
-          )
-          .run(taskId, task.description, task.owner, taskDeadline, task.priority, 'pending', rockId, sprintId, toAmount(task.monto), task.tipo ?? 'gasto', nowIso())
-
-        createdTaskIds.push(taskId)
-      }
-    }
-
-    return {
-      rockId,
-      sprintIds: createdSprintIds,
-      taskIds: createdTaskIds
-    }
+  await db.insert(rocks).values({
+    id: rockId,
+    name: input.plan.rock.name,
+    description: input.plan.rock.description,
+    deadline: rockDeadline,
+    status: 'active',
+    createdAt: nowIso()
   })
 
-  return runSavePlan(input.plan)
+  for (const sprint of input.plan.sprints) {
+    const sprintId = `S-${alphaNum()}`
+    const sprintStartDate = normalizeDateToDb(sprint.startDate)
+    const sprintEndDate = normalizeDateToDb(sprint.endDate)
+
+    if (sprintStartDate < today) {
+      throw new Error('Sprint startDate cannot be in the past.')
+    }
+    if (sprintEndDate < today) {
+      throw new Error('Sprint endDate cannot be in the past.')
+    }
+    if (sprintEndDate < sprintStartDate) {
+      throw new Error('Sprint endDate must be on or after startDate.')
+    }
+
+    await db.insert(sprints).values({
+      id: sprintId,
+      name: sprint.name,
+      startDate: sprintStartDate,
+      endDate: sprintEndDate,
+      rockId,
+      status: 'planned',
+      createdAt: nowIso()
+    })
+
+    createdSprintIds.push(sprintId)
+
+    for (const task of sprint.tasks) {
+      if (task.selected === false) {
+        continue
+      }
+
+      const taskDeadline = normalizeDateToDb(task.deadline)
+      if (taskDeadline < today) {
+        throw new Error('Task deadline cannot be in the past.')
+      }
+      if (taskDeadline < sprintStartDate || taskDeadline > sprintEndDate) {
+        throw new Error(
+          `Period Boundary Rule: deadline ${taskDeadline} must be between ${sprintStartDate} and ${sprintEndDate}.`
+        )
+      }
+
+      const taskId = `T-${alphaNum()}`
+      await db.insert(tasks).values({
+        id: taskId,
+        description: task.description,
+        owner: task.owner,
+        deadline: taskDeadline,
+        priority: task.priority,
+        status: 'pending',
+        rockId,
+        sprintId,
+        monto: toAmount(task.monto),
+        tipo: task.tipo ?? 'gasto',
+        createdAt: nowIso()
+      })
+
+      createdTaskIds.push(taskId)
+    }
+  }
+
+  return {
+    rockId,
+    sprintIds: createdSprintIds,
+    taskIds: createdTaskIds
+  }
 }
 
 export async function deleteRock(input: { rockId: string; force?: boolean }) {

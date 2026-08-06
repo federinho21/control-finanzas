@@ -1,5 +1,5 @@
 import { and, eq, isNotNull, isNull } from 'drizzle-orm'
-import { db } from '~~/server/db'
+import { db, initDatabase } from '~~/server/db'
 import { documentChunks, documents } from '~~/server/db/schema'
 
 /**
@@ -34,6 +34,9 @@ async function deleteOrphanedDocuments() {
 }
 
 export default defineNitroPlugin(async (nitroApp) => {
+  // Initialize the DB connection (D1 on Workers, better-sqlite3 locally) before queries.
+  await initDatabase()
+
   // Clean up orphans left by crashes or abandoned sessions from previous runs.
   await deleteOrphanedDocuments()
 

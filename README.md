@@ -1,112 +1,63 @@
-# Quarterly Rocks AI Assistant
+# 💠 Control de Finanzas con Asistente IA
 
-An AI-powered planning assistant for managing Quarterly Rocks, Sprints, and Tasks. Built with Nuxt 4, LangGraph, Google Gemini 2.5 Flash, and SQLite.
+Aplicación de **control de finanzas personales** con asistente conversacional impulsado por IA. Gestiona movimientos (ingresos/gastos/retiros), cuotas fijas y presupuestos mensuales con un dashboard de KPIs.
 
-## Prerequisites
+**🌐 Producción (Cloudflare Workers):** https://control-finanzas.agente-deportivo.workers.dev
 
-- Node.js 20+
-- A [Google Gemini API key](https://aistudio.google.com/app/apikey)
+---
 
-## Local Setup
+## ✨ Funcionalidades
 
-**1. Install dependencies**
+- **🤖 Asistente IA** (`gemini-3.6-flash`): conversa en español, genera presupuestos, registra movimientos y cuotas, y responde preguntas sobre tus finanzas.
+- **📊 Dashboard financiero**: ingresos, gastos, retiros y balance del mes + distribución por categoría.
+- **🔁 Cuotas fijas**: suscripciones mensuales/anuales con marcado de pago (genera el gasto automáticamente).
+- **📄 RAG**: sube facturas, extractos bancarios o presupuestos (.txt/.md/.pdf) y pregunta sobre su contenido.
+- **💎 UI Liquid Glass**: tema oscuro con paneles de cristal, fondos aurora y animaciones.
+- **📱 Responsive**: navegación móvil inferior + vista desktop con sidebar.
+
+## 🛠 Tech Stack
+
+| Capa | Tecnología |
+|---|---|
+| Frontend | Nuxt 4, Vue 3, Nuxt UI v4, Tailwind CSS v4, Chart.js |
+| Backend | Nitro (Nuxt server), H3, SSE streaming |
+| AI Orchestration | LangGraph (StateGraph) |
+| Modelos | Google Gemini `gemini-3.6-flash` + `gemini-embedding-001` |
+| Base de datos | SQLite local (better-sqlite3) · **Cloudflare D1** en producción |
+
+## 🚀 Setup local
 
 ```bash
 npm install
+# crear .env con: GEMINI_API_KEY=tu_key
+npm run dev   # http://localhost:3000
 ```
 
-**2. Create the environment file**
+> En Windows con caracteres corruptos en logs: `chcp 65001` antes de arrancar.
 
-Create a `.env` file in the project root:
-
-```
-GEMINI_API_KEY=your_google_gemini_api_key_here
-```
-
-The database (`hackathon.db`) is created automatically in `.data/` on first run — no migration step needed.
-
-**3. Start the development server**
+## ☁️ Deploy a Cloudflare Workers
 
 ```bash
-npm run dev
+npm run build:cf      # build con preset cloudflare_module + driver D1
+npx wrangler d1 create control-finanzas-db   # crear la DB (una vez)
+npx wrangler d1 migrations apply control-finanzas-db --remote
+npx wrangler secret put GEMINI_API_KEY       # guardar la API key
+npx wrangler deploy                          # desplegar
 ```
 
-The app will be available at [http://localhost:3000](http://localhost:3000).
-
-> **Windows terminal encoding:** if log symbols appear as garbled characters, run `chcp 65001` in your terminal before starting the server.
-
-## Production Build Preview
-
-To test the production build locally before deploying:
-
-**1. Build the app**
-
-```bash
-npm run build
-```
-
-**2. Preview the production build**
-
-```bash
-npm run preview
-```
-
-This starts a local server (usually at [http://localhost:3000](http://localhost:3000)) running the optimized production output. Use this to validate the app behaves correctly before publishing to any hosting platform.
-
-> The `.env` file is still required for the production preview — make sure `GEMINI_API_KEY` is set.
-
-## App Pages
-
-| Route | Description |
-|---|---|
-| `/` | Main view: backlog sidebar + AI chat |
-| `/preview` | Plan preview and edit before approval |
-| `/dashboard` | Executive KPI dashboard |
-
-## Key Features
-
-### Chat Agent
-Type any planning intent in the chat input on the home page. Examples:
-
-- `"Create a Q3 growth plan for our SaaS product"` — generates a full Rock + Sprints + Tasks plan
-- `"Break sprint S-XXXX into tasks for rock R-XXXX"` — generates tasks for a specific sprint
-- `"Mark T-XXXX as completed"` — updates a task status
-- `"What's the status of R-XXXX?"` — queries a rock's details
-- `"Generate a retrospective for S-XXXX"` — creates a sprint retrospective summary
-- Ask questions about uploaded documents using RAG
-
-### Plan Preview (`/preview`)
-When the agent generates a full plan, it opens automatically in preview mode:
-1. Edit the rock name, description, and deadline
-2. Edit sprint names and dates
-3. Add or remove sprints using the buttons at the bottom
-4. Add, remove, or edit tasks within each sprint (description, owner, deadline, priority, include toggle)
-5. Click **Approve Plan** to persist everything to the database
-
-You can also modify the plan via chat before approving: while the preview is open, type something like `"Add a sprint for QA testing"` and the agent will update the plan in the preview.
-
-### Document Upload
-Upload PDFs or text documents using the upload button in the chat sidebar. Uploaded documents are chunked, embedded, and stored for RAG queries.
-
-### Executive Dashboard (`/dashboard`)
-View KPI cards, task status distribution, sprint status distribution, and rock completion progress charts.
-
-## Tech Stack
-
-- **Frontend:** Nuxt 4 + Vue 3 + Nuxt UI v4
-- **AI:** LangGraph + Google Gemini 2.5 Flash
-- **Database:** Drizzle ORM + SQLite (better-sqlite3)
-- **Logging:** pino + pino-pretty (dev)
-- **Charts:** Chart.js + vue-chartjs
-
-## Project Structure
+## 🗂 Estructura
 
 ```
-app/          # Frontend pages, components, composables
+app/          # Frontend: páginas, componentes, composables
 server/
-  agents/     # LangGraph graph, supervisor, data-agent, planner, RAG, judge, retrospective
-  api/        # Nitro API routes (chat SSE, dashboard, upload, documents)
-  db/         # Drizzle schema and SQLite connection
-  utils/      # Logger, chunker, pdf-parser
-shared/       # Cross-layer TypeScript types
+  agents/     # LangGraph: supervisor, strategy-planner, planner, data-agent, RAG, judge, retro
+  api/        # Rutas Nitro (chat SSE, movimientos, cuotas, resumen, dashboard)
+  db/         # Drizzle schema + conexión SQLite/D1
+shared/       # Tipos TypeScript cross-layer
+migrations/   # Migraciones D1
 ```
+
+## 🔖 Convenciones
+
+- IDs: `R-XXXX` (cuenta), `S-XXXX` (período), `T-XXXX` (movimiento), `U-XXXX` (cuota).
+- El asistente se dirige al usuario como **Fede** y muestra fecha/hora de Costa Rica.

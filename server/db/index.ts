@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS sprints (
   start_date TEXT NOT NULL,
   end_date TEXT NOT NULL,
   rock_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'planned',
   created_at TEXT NOT NULL,
   FOREIGN KEY (rock_id) REFERENCES rocks(id)
 );
@@ -39,6 +40,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   status TEXT NOT NULL,
   rock_id TEXT NOT NULL,
   sprint_id TEXT NOT NULL,
+  monto TEXT NOT NULL DEFAULT '0',
+  tipo TEXT NOT NULL DEFAULT 'gasto',
   created_at TEXT NOT NULL,
   FOREIGN KEY (rock_id) REFERENCES rocks(id),
   FOREIGN KEY (sprint_id) REFERENCES sprints(id)
@@ -47,7 +50,9 @@ CREATE TABLE IF NOT EXISTS documents (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   filename TEXT NOT NULL,
   content TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  rock_id TEXT,
+  temp_id TEXT
 );
 CREATE TABLE IF NOT EXISTS document_chunks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,3 +90,11 @@ safeAlter("ALTER TABLE tasks ADD COLUMN tipo TEXT NOT NULL DEFAULT 'gasto'")
 
 export const db = drizzle(sqlite, { schema })
 export const rawDb = sqlite
+
+export async function initDatabase() {
+  return db
+}
+
+export function isCf() {
+  return false
+}

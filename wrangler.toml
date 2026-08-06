@@ -1,0 +1,11 @@
+name = "control-finanzas"
+main = ".output/server/index.mjs"
+compatibility_date = "2025-07-15"
+
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "control-finanzas-db"
+database_id = "03ea609e-d8a9-49fa-86d3-649d78c14083"
+migrations_dir = "migrations"
