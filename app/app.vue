@@ -1,3 +1,22 @@
+<script setup lang="ts">
+// Force dark mode: sets the `dark` class on <html> and pins the color mode so
+// the night palette is applied on both SSR and client.
+const colorMode = useColorMode()
+colorMode.preference = 'dark'
+if (import.meta.client) {
+  document.documentElement.classList.add('dark')
+}
+
+useHead({
+  htmlAttrs: {
+    class: 'dark',
+  },
+  bodyAttrs: {
+    style: 'background-color:#000000;',
+  },
+})
+</script>
+
 <template>
   <div class="app-shell">
     <AppSidebar class="hidden lg:flex" />

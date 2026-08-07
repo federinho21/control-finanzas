@@ -1,8 +1,6 @@
 name = "control-finanzas"
-main = ".output/server/index.mjs"
 compatibility_date = "2025-07-15"
-
-workers_dev = true
+pages_build_output_dir = "dist"
 
 [[d1_databases]]
 binding = "DB"

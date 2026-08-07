@@ -19,7 +19,7 @@ export default defineNuxtConfig({
   },
   nitro: cfBuild
     ? {
-        preset: 'cloudflare_module',
+        preset: 'cloudflare_pages',
         alias: {
           '~~/server/db/schema': '~~/server/db/schema',
           '~~/server/db': '~~/server/db-cf'

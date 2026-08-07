@@ -92,6 +92,32 @@
   --glass-saturation: 150%;
 }
 
+/* ── Force dark palette on :root and .dark so Nuxt UI layer order never wins ── */
+:root,
+:root.dark,
+html.dark {
+  --ui-bg: #000000;
+  --ui-bg-strong: #0a0a0a;
+  --ui-bg-elevated: rgba(255, 255, 255, 0.04);
+  --ui-surface: rgba(255, 255, 255, 0.05);
+  --ui-surface-strong: rgba(255, 255, 255, 0.08);
+  --ui-surface-soft: rgba(148, 163, 184, 0.06);
+  --ui-border: rgba(148, 163, 184, 0.18);
+  --ui-border-strong: rgba(148, 163, 184, 0.35);
+  --ui-text: #F5F7FA;
+  --ui-text-muted: #A0AEC0;
+  --ui-text-soft: #8896AB;
+  --ui-primary: #9D8CFF;
+  --ui-primary-500: #9D8CFF;
+  --ui-primary-600: #a99bff;
+  --ui-accent: #9D8CFF;
+  --ui-accent-strong: #a99bff;
+  --ui-card-background: rgba(255, 255, 255, 0.05);
+  --ui-card-border: rgba(148, 163, 184, 0.16);
+  --ui-input-background: rgba(255, 255, 255, 0.06);
+  --ui-input-border: rgba(148, 163, 184, 0.2);
+}
+
 /* Night background — pure black with subtle gray glow */
 html,
 body,

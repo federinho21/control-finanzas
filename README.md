@@ -2,7 +2,7 @@
 
 Aplicación de **control de finanzas personales** con asistente conversacional impulsado por IA. Gestiona movimientos (ingresos/gastos/retiros), cuotas fijas y presupuestos mensuales con un dashboard de KPIs.
 
-**🌐 Producción (Cloudflare Workers):** https://control-finanzas.agente-deportivo.workers.dev
+**🌐 Producción (Cloudflare Pages):** https://control-finanzas.pages.dev
 
 ---
 
@@ -35,14 +35,14 @@ npm run dev   # http://localhost:3000
 
 > En Windows con caracteres corruptos en logs: `chcp 65001` antes de arrancar.
 
-## ☁️ Deploy a Cloudflare Workers
+## ☁️ Deploy a Cloudflare Pages
 
 ```bash
-npm run build:cf      # build con preset cloudflare_module + driver D1
+npm run build:cf      # build con preset cloudflare_pages + driver D1
 npx wrangler d1 create control-finanzas-db   # crear la DB (una vez)
 npx wrangler d1 migrations apply control-finanzas-db --remote
 npx wrangler secret put GEMINI_API_KEY       # guardar la API key
-npx wrangler deploy                          # desplegar
+npx wrangler pages deploy dist               # desplegar
 ```
 
 ## 🗂 Estructura
