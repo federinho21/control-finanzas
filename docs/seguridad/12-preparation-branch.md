@@ -47,6 +47,8 @@ Netlify acknowledged upserts of the four public Firebase SDK variables and `FIRE
 
 ## Remaining release gates
 
+The preview rebuilt at commit `4413ca4` but still returned the same 502. The experimental environment workaround did not resolve the deployed failure. The replacement fix bundles `firebase-admin`, `jwks-rsa` and `jose` through Nitro, with CommonJS default-export interop set to `preferred` (needed by the bundled debug shim). No dependency downgrade is used. The compiled smoke test now starts a separate plain Node process with `--no-experimental-require-module` and an empty `NODE_OPTIONS`: `tsx` alone masked the failure. This regression failed before the bundling fix and passed afterward, along with all 15 compiled route checks. Remote verification of this replacement remains necessary.
+
 - Source publication is confirmed; select this branch for protected staging/preview without replacing production `main`.
 - Server Firebase credentials and verified least-privilege IAM; do not paste private keys in chat.
 - Netlify variables, exact Origin and Firebase authorized domains per trusted deploy context.

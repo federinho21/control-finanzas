@@ -16,7 +16,11 @@ export default defineNuxtConfig({
     fallback: 'dark',
     classSuffix: '',
   },
-  nitro: { preset: process.env.NITRO_PRESET === 'netlify' || process.env.NETLIFY === 'true' ? 'netlify' : 'node-server' },
+  nitro: {
+    preset: process.env.NITRO_PRESET === 'netlify' || process.env.NETLIFY === 'true' ? 'netlify' : 'node-server',
+    externals: { inline: ['firebase-admin', 'jwks-rsa', 'jose'] },
+    commonJS: { requireReturnsDefault: 'preferred' }
+  },
   fonts: {
     families: [
       {

@@ -2,12 +2,15 @@ import assert from 'node:assert/strict'
 import { stat } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
 const sqliteTime = (await stat('.data/hackathon.db').catch(() => null))?.mtimeMs
 process.env.NODE_ENV = 'production'
 process.env.AUTH_ORIGIN = 'https://finance-test.netlify.app'
 process.env.FIREBASE_PROJECT_ID = ''
 delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+const coldStart = spawnSync(process.execPath, ['--no-experimental-require-module', '--input-type=module', '-e', "await import('./.netlify/functions-internal/server/server.mjs')"], { encoding: 'utf8', env: { ...process.env, NODE_OPTIONS: '' } })
+assert.equal(coldStart.status, 0, `Plain Node cold start failed: ${coldStart.stderr}`)
 const { default: handler } = await import(pathToFileURL(resolve('.netlify/functions-internal/server/server.mjs')).href)
 const request = (path: string, options: RequestInit = {}) => handler(new Request(process.env.AUTH_ORIGIN + path, options)) as Promise<Response>
 
