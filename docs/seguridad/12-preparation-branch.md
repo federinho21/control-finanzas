@@ -63,6 +63,16 @@ Firestore permissions remain deliberately absent: successful Google session crea
 
 Rollback: remove the dedicated role binding and revoke the dedicated account's user-managed key via Google IAM; remove its Netlify secret and rebuild the preview. Do not revoke the pre-existing Firebase Admin SDK account's keys. Server key rotation and production identity are separate release gates.
 
+## Read-only Firestore acceptance step
+
+Fede reported successful real Google login and asked to continue with payment access. The existing Google account remains linked to Android UID `MOjsiAMSkAZGtBwqzvvpJELHrjj2` according to Firebase Auth; the browser session UID itself has not been independently inspected. A read-only aggregation of top-level `payments` filtered by that UID returned 19 source records. This count is not a promise of 19 displayed movements: the web intentionally excludes unparsed/unsupported-currency records and respects owner hide markers.
+
+Granted the existing dedicated preview identity a separate custom role `projects/wallet-payment-tracker-fede/roles/cfFirestorePreviewRead`: ONLY `datastore.databases.get`, `datastore.databases.getMetadata`, `datastore.entities.get`, `datastore.entities.list`. These permit queries/read transactions, not document creates/updates/deletes, imports/exports, index administration or IAM changes. Policy etag and read-back assertions preserved previous grants; no new key was generated. This project-level IAM role is not a per-user document filter: Firebase Admin bypasses rules, so the server's verified UID and owner-filtered repository queries remain mandatory isolation controls.
+
+The role and bindings were verified administratively. A read-only attempt to obtain a short-lived impersonation token for independently testing this service identity was unavailable; no API or impersonation privilege was enabled to bypass that limitation. The count above used the existing operator login, NOT the deployed service account. Real financial reads from Fede's browser, two-user acceptance and indexes remain pending. IAM propagation may take time; reload the signed-in preview. No Firestore content, Android payment, rule/index configuration or production deployment was changed. Financial writes/chat quota writes/uploads remain unavailable with this read-only identity.
+
+Rollback for this step: remove only the `cfFirestorePreviewRead` binding for `cf-netlify-preview`, leaving the existing session role and all unrelated principals untouched.
+
 - Source publication is confirmed; select this branch for protected staging/preview without replacing production `main`.
 - Server Firebase credentials and verified least-privilege IAM; do not paste private keys in chat.
 - Netlify variables, exact Origin and Firebase authorized domains per trusted deploy context.
