@@ -11,6 +11,8 @@ Fede authorized uploading the reviewed changes to a preparation branch, WITHOUT 
 - Site ID: `9c49b0cd-ab24-41f0-b5cc-c1bcdeca698f`
 - Selected HTTPS URL: `https://control-finazas.netlify.app`
 
+Publication confirmed: the source commit `8ccac02` and initial documentation commit `cf3449b` were pushed to `origin/prepare/firebase-netlify`. Remote-ref verification showed `main` still at `f9eae2d7a79f6759e327e990d0894d81de739b7f`. The application working tree was clean after publication. No pull request or production merge was created by the agent.
+
 The selected URL returned 404 during the read-only connection check. No production deploy or merge was requested in this checkpoint. Pushing this branch may trigger branch/preview automation if enabled in Netlify; it does not change the Git `main` branch. Actual branch deployment behavior must be checked before configuring live credentials.
 
 ## Publication contents and checks
@@ -35,7 +37,7 @@ This is preparation-branch verification, NOT a production security approval. Tes
 
 ## Still pending
 
-- Confirm source publication succeeded and select this branch for protected staging/preview without replacing production `main`.
+- Source publication is confirmed; select this branch for protected staging/preview without replacing production `main`.
 - Server Firebase credentials and verified least-privilege IAM; do not paste private keys in chat.
 - Netlify variables, exact Origin and Firebase authorized domains per trusted deploy context.
 - Private document-storage decision; changing hosting does not remove Firebase Storage's billing requirement.
