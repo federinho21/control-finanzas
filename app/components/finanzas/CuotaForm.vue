@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const emit = defineEmits<{ (e: 'created'): void }>()
+const api = useApi()
 
 const form = reactive({
   nombre: '',
@@ -14,7 +15,7 @@ async function onSubmit() {
   if (creating.value) return
   creating.value = true
   try {
-    await $fetch('/api/cuotas', {
+    await api('/api/cuotas', {
       method: 'POST',
       body: {
         nombre: form.nombre,

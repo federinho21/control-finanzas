@@ -1,86 +1,47 @@
-import { eventHandler, readBody, setHeader } from 'h3'
-import { runGraph } from '~~/server/agents/graph'
-import { logger } from '~~/server/utils/logger'
+import { createError, eventHandler, sendStream, setHeader, type H3Event } from 'h3'
+import { z } from 'zod'
+import { runGraph, type RunGraphInput } from '../agents/graph'
+import { getAgentRepository, actionSession } from '../repositories/agent'
+import { requireAuthOrigin, requireUser } from '../utils/auth'
+import { readLimitedJson } from '../utils/request-input'
+import { FinanceError } from '../repositories/finance-model'
 
-/**
- * Writes a single Server-Sent Events payload to the response stream.
- * @param res Node response object used to write SSE frames.
- * @param payload Event payload serialized as JSON for the client.
- * @returns {void} No value is returned.
- */
-function writeSse(res: any, payload: Record<string, unknown>) {
-  res.write(`data: ${JSON.stringify(payload)}\n\n`)
+const inputSchema = z.object({ sessionId: actionSession, message: z.string().trim().min(1).max(8000), action: z.object({ type: z.enum(['approve_tasks', 'approve_plan', 'cancel_plan', 'cancel_tasks', 'confirm_delete', 'update_task_status', 'update_sprint_status', 'generate_retrospective']), actionId: z.string().uuid().optional(), payload: z.record(z.string(), z.unknown()).optional() }).strict().optional() }).strict().refine(input => !input.action || ['update_sprint_status', 'generate_retrospective'].includes(input.action.type) || !!input.action.actionId, 'Approval ID required.')
+
+export function createChatHandler(dependencies: {
+  user: typeof requireUser; origin: typeof requireAuthOrigin
+  quota: (uid: string) => Promise<void>; graph: (input: RunGraphInput) => Promise<{ judgeWarning: string | null; guardrailError: string | null }>
+}) {
+  return eventHandler(async (event: H3Event) => {
+    const user = await dependencies.user(event)
+    dependencies.origin(event)
+    const parsed = inputSchema.safeParse(await readLimitedJson(event))
+    if (!parsed.success) throw createError({ statusCode: 400, statusMessage: 'Invalid chat request.' })
+    try { await dependencies.quota(user.uid) } catch (error) {
+      throw createError({ statusCode: error instanceof FinanceError ? error.statusCode : 503, statusMessage: 'Chat quota unavailable or exceeded.' })
+    }
+    setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
+    setHeader(event, 'Cache-Control', 'no-store, no-transform')
+    setHeader(event, 'Vary', 'Cookie')
+    let closed = false
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const write = (value: Record<string, unknown>) => { if (!closed) controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(value)}\n\n`)) }
+        void (async () => {
+          try {
+            const final = await dependencies.graph({ uid: user.uid, ...parsed.data, onEvent: ({ type, data }) => write({ type, ...data }) })
+            if (final.judgeWarning) write({ type: 'judge', message: final.judgeWarning })
+            if (final.guardrailError) write({ type: 'guardrail', message: final.guardrailError })
+          } catch {
+            write({ type: 'error', message: 'Could not process this request. Please retry.' })
+          } finally {
+            if (!closed) { write({ type: 'done' }); closed = true; controller.close() }
+          }
+        })()
+      },
+      cancel() { closed = true }
+    })
+    return sendStream(event, body)
+  })
 }
-
-/**
- * Handles POST /api/chat and streams agent events to the client via SSE.
- * @param event Nitro event containing the request body with session, message, and optional action.
- * @returns Streamed SSE response ending with done, or an error event payload.
- * @throws Sends an SSE error event when graph execution or request processing fails.
- */
-export default eventHandler(async (event) => {
-  const body = await readBody<{
-    sessionId?: string
-    message: string
-    action?: { type: string; actionId?: string; payload?: Record<string, unknown> }
-  }>(event)
-
-  const sessionId = body.sessionId || 'default-session'
-
-  setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
-  setHeader(event, 'Cache-Control', 'no-cache, no-transform')
-  setHeader(event, 'Connection', 'keep-alive')
-
-  const res = event.node.res
-
-  try {
-    logger.info('SSE', `request session=${sessionId} action=${body.action?.type ?? 'none'} message="${body.message.slice(0, 60)}"`)
-
-    const finalState = await runGraph({
-      sessionId,
-      message: body.message,
-      action: body.action,
-      onEvent: ({ type, data }) => {
-        if (type === 'status') {
-          logger.debug('SSE', `status → ${String(data.message || 'Processing...')}`)
-        }
-
-        if (type === 'result') {
-          writeSse(res, {
-            type: 'result',
-            message: data.message,
-            proposedTasks: data.proposedTasks ?? null,
-            proposedPlan: data.proposedPlan ?? null,
-            actionRequest: data.actionRequest ?? null,
-            refreshBacklog: Boolean(data.refreshBacklog)
-          })
-          logger.info('SSE', `emit result refreshBacklog=${Boolean(data.refreshBacklog)} hasActionRequest=${!!data.actionRequest} hasProposedPlan=${!!data.proposedPlan} hasProposedTasks=${!!(data.proposedTasks as unknown[])?.length}`)
-        }
-      }
-    })
-
-    // Emit judge warning if LLM-as-a-Judge detected inconsistency.
-    if (finalState.judgeWarning) {
-      writeSse(res, { type: 'judge', message: finalState.judgeWarning })
-      logger.warn('SSE', `emit judge warning session=${sessionId}`)
-    }
-
-    // Emit guardrail error as a distinct event type.
-    if (finalState.guardrailError) {
-      writeSse(res, { type: 'guardrail', message: finalState.guardrailError })
-      logger.warn('SSE', `emit guardrail error session=${sessionId}`)
-    }
-
-    writeSse(res, { type: 'done' })
-    logger.info('SSE', `done session=${sessionId}`)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unexpected agent error.'
-    writeSse(res, {
-      type: 'error',
-      message: `There was a problem processing your request: ${message}`
-    })
-    logger.error('SSE', `error session=${sessionId}`, error instanceof Error ? error.message : error)
-  } finally {
-    res.end()
-  }
-})
+export default createChatHandler({ user: requireUser, origin: requireAuthOrigin, quota: uid => getAgentRepository().quota(uid, 'chat', 20, 60000), graph: runGraph })

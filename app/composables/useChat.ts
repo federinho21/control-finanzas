@@ -4,6 +4,7 @@ import type { ProposedPlan } from '~~/shared/types/plan'
 import type { ProposedTask } from '~~/shared/types/task'
 import { normalizeDateToDb } from '~~/shared/utils/date'
 import { usePlanPreview } from '~/composables/usePlanPreview'
+import { SessionChangedError } from '~/utils/web-session'
 
 // Parses buffered SSE chunks into JSON events and keeps incomplete data for the next read.
 function parseSseChunk(buffer: string): { events: Array<Record<string, any>>; rest: string } {
@@ -55,8 +56,10 @@ function buildWelcomeMessage(): ChatMessage {
  * @returns An object containing chat state arrays, pending status, and methods to send messages and submit actions.
  */
 export function useChat() {
+  const auth = useAuth()
   const sessionId = useState<string>('chat-session-id', () => crypto.randomUUID())
   const messages = useState<ChatMessage[]>('chat-messages', () => [buildWelcomeMessage()])
+  if (!messages.value.length) messages.value = [buildWelcomeMessage()]
   const pending = useState<boolean>('chat-pending', () => false)
   const reconnecting = useState<boolean>('chat-reconnecting', () => false)
 
@@ -65,10 +68,17 @@ export function useChat() {
 
   // Sends a chat request and processes streamed SSE events into UI state updates.
   async function streamRequest(payload: Record<string, unknown>) {
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: sessionId.value, ...payload })
+    const version = auth.version()
+    const response = await auth.request(async signal => {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        credentials: 'include',
+        signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: sessionId.value, ...payload })
+      })
+      if (response.status === 401) throw Object.assign(new Error('Unauthorized.'), { statusCode: 401 })
+      return response
     })
 
     if (!response.ok || !response.body) {
@@ -81,6 +91,7 @@ export function useChat() {
 
     while (true) {
       const { done, value } = await reader.read()
+      if (version !== auth.version()) throw new SessionChangedError()
       if (done) {
         break
       }
@@ -90,6 +101,7 @@ export function useChat() {
       buffer = parsed.rest
 
       for (const event of parsed.events) {
+        if (version !== auth.version()) throw new SessionChangedError()
         if (event.type === 'result') {
           const chatMessage: ChatMessage = {
             id: nanoid(),
@@ -176,6 +188,7 @@ export function useChat() {
             }
           }
 
+          if (version !== auth.version()) throw new SessionChangedError()
           messages.value.push(chatMessage)
 
           if (event.refreshBacklog) {
@@ -217,6 +230,7 @@ export function useChat() {
 
   // Sends a user message and streams assistant updates into the conversation timeline.
   async function sendMessage(message: string) {
+    const version = auth.version()
     const trimmed = message.trim()
     if (!trimmed || pending.value) {
       return
@@ -235,6 +249,7 @@ export function useChat() {
       reconnecting.value = false
       await streamRequest({ message: trimmed })
     } catch (error) {
+      if (version !== auth.version()) return
       reconnecting.value = true
       messages.value.push({
         id: nanoid(),
@@ -243,16 +258,17 @@ export function useChat() {
         createdAt: new Date().toISOString()
       })
     } finally {
-      pending.value = false
+      if (version === auth.version()) pending.value = false
     }
   }
 
   // Submits a pending UI action back to the assistant workflow.
   async function submitAction(action: {
-    type: 'approve_tasks' | 'confirm_delete' | 'approve_plan' | 'update_sprint_status' | 'update_task_status'
+    type: 'approve_tasks' | 'confirm_delete' | 'approve_plan' | 'cancel_plan' | 'cancel_tasks' | 'update_sprint_status' | 'update_task_status'
     actionId: string
     payload?: Record<string, unknown>
   }, editedTasks?: ProposedTask[], editedPlan?: ProposedPlan) {
+    const version = auth.version()
     if (pending.value) {
       return false
     }
@@ -283,8 +299,9 @@ export function useChat() {
                 : action.payload
         }
       })
-      return true
+      return version === auth.version()
     } catch (error) {
+      if (version !== auth.version()) return false
       messages.value.push({
         id: nanoid(),
         role: 'error',
@@ -293,7 +310,7 @@ export function useChat() {
       })
       return false
     } finally {
-      pending.value = false
+      if (version === auth.version()) pending.value = false
     }
   }
 

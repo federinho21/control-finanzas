@@ -17,7 +17,7 @@ export default defineAppConfig({
     },
     select: {
       slots: {
-        root: 'bg-white/5 border-white/10'
+        base: 'bg-white/5 border-white/10'
       }
     },
     textarea: {

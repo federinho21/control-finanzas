@@ -1,0 +1,14 @@
+{
+  "extends": "../node_modules/.cache/nuxt/.nuxt/tsconfig.app.json",
+  "compilerOptions": { "noEmit": true },
+  "files": ["../node_modules/.cache/nuxt/.nuxt/nuxt.d.ts"],
+  "include": [
+    "../node_modules/.cache/nuxt/.nuxt/**/*.d.ts",
+    "../app/plugins/auth.ts", "../app/plugins/firebase.client.ts",
+    "../app/composables/useAuth.ts", "../app/composables/useApi.ts",
+    "../app/middleware/auth.global.ts", "../app/utils/web-session.ts",
+    "../app/pages/login.vue", "web-session.test.ts", "auth-browser.spec.ts",
+    "../shared/types/pdf-parse.d.ts",
+    "start-test-server.ts", "playwright.config.ts"
+  ]
+}

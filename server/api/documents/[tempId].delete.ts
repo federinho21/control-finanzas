@@ -1,34 +1,15 @@
 import { createError, eventHandler, getRouterParam } from 'h3'
-import { eq, and, isNotNull } from 'drizzle-orm'
-import { db } from '~~/server/db'
-import { documentChunks, documents } from '~~/server/db/schema'
+import { requireAuthOrigin, requireUser } from '../../utils/auth'
+import { getDocumentRepository } from '../../repositories/documents'
+import { FinanceError, recordId } from '../../repositories/finance-model'
+import { runDocumentDelete } from '../../agents/data-agent'
 
-/**
- * Handles DELETE /api/documents/:tempId to remove a provisional uploaded document.
- * @param event Nitro event containing the route parameter tempId.
- * @returns Idempotent deletion result with ok flag and deleted boolean.
- * @throws {H3Error} Throws a 400 error when tempId is missing.
- */
-export default eventHandler(async (event) => {
-  const tempId = getRouterParam(event, 'tempId')
-
-  if (!tempId) {
-    throw createError({ statusCode: 400, statusMessage: 'tempId is required' })
+export default eventHandler(async event => {
+  const user = await requireUser(event)
+  requireAuthOrigin(event)
+  const id = recordId.safeParse(getRouterParam(event, 'tempId'))
+  if (!id.success) throw createError({ statusCode: 400, statusMessage: 'Invalid document ID.' })
+  try { return await runDocumentDelete(user.uid, id.data, getDocumentRepository()) } catch (error) {
+    throw createError({ statusCode: error instanceof FinanceError ? error.statusCode : 503, statusMessage: error instanceof FinanceError ? error.message : 'Document deletion unavailable.' })
   }
-
-  // Find the provisional document to delete.
-  const doc = await db.query.documents.findFirst({
-    where: and(eq(documents.tempId, tempId), isNotNull(documents.tempId))
-  })
-
-  if (!doc) {
-    // Idempotent - already deleted or never existed.
-    return { ok: true, deleted: false }
-  }
-
-  // Delete chunks first to respect the foreign key constraint.
-  await db.delete(documentChunks).where(eq(documentChunks.documentId, doc.id))
-  await db.delete(documents).where(eq(documents.id, doc.id))
-
-  return { ok: true, deleted: true }
 })

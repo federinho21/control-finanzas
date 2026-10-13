@@ -10,6 +10,7 @@ import { savePendingPlan, savePendingTasks } from './state-store'
 import { judgeTaskCompletion } from './judge'
 import { generateRetrospective } from './retrospective'
 import { logger } from '~~/server/utils/logger'
+import { getAgentRepository } from '../repositories/agent'
 
 /**
  * Defines the shared state schema passed between all LangGraph nodes in the agent workflow.
@@ -28,6 +29,7 @@ import { logger } from '~~/server/utils/logger'
  * @property guardrailError — Non-null when a data operation violates a business rule guardrail.
  */
 const AgentState = Annotation.Root({
+  uid: Annotation<string>,
   sessionId: Annotation<string>,
   message: Annotation<string>,
   action: Annotation<{ type: string; actionId?: string; payload?: Record<string, unknown> } | null>,
@@ -58,9 +60,10 @@ const AgentState = Annotation.Root({
  * @returns Updated state with detected intent and clarification if needed
  */
 const supervisorNode = async (state: typeof AgentState.State) => {
-  logger.info('Graph', `supervisorNode - session=${state.sessionId} message="${state.message.slice(0, 80)}"`)
+  logger.info('Graph', 'supervisorNode')
 
   const intent = await detectIntent({
+    uid: state.uid,
     message: state.message,
     sessionId: state.sessionId,
     action: state.action ?? undefined
@@ -99,7 +102,8 @@ const strategyNode = async (state: typeof AgentState.State) => {
   })
 
   const actionId = crypto.randomUUID()
-  savePendingPlan(actionId, {
+  await savePendingPlan(actionId, {
+    uid: state.uid,
     sessionId: state.sessionId,
     plan
   })
@@ -135,13 +139,15 @@ const plannerNode = async (state: typeof AgentState.State) => {
   }
 
   const tasks = await generateProposedTasks({
+    uid: state.uid,
     message: state.message,
     rockId: state.intent.rockId,
     sprintId: state.intent.sprintId
   })
 
   const actionId = crypto.randomUUID()
-  savePendingTasks(actionId, {
+  await savePendingTasks(actionId, {
+    uid: state.uid,
     sessionId: state.sessionId,
     rockId: state.intent.rockId,
     sprintId: state.intent.sprintId,
@@ -170,6 +176,7 @@ const dataNode = async (state: typeof AgentState.State) => {
   logger.info('Graph', `dataNode - operation="${state.intent?.operation}"`)
 
   const resultAsAny = await runDataOperation({
+    uid: state.uid,
     sessionId: state.sessionId,
     operation: state.intent?.operation,
     message: state.message,
@@ -208,6 +215,7 @@ const dataNode = async (state: typeof AgentState.State) => {
   } else if ((resultAsAny.statusPicker as Record<string, unknown> | undefined)?.entityType === 'task') {
     const statusPicker = resultAsAny.statusPicker as { entityId: string; entityType: string }
     const actionId = crypto.randomUUID()
+    await getAgentRepository().saveAction(state.uid, state.sessionId, actionId, 'status', { taskId: statusPicker.entityId })
     actionRequest = {
       type: 'update_task_status',
       actionId,
@@ -247,7 +255,7 @@ const dataNode = async (state: typeof AgentState.State) => {
     proposedPlan,
     refreshBacklog: Boolean(resultAsAny.refreshBacklog),
     actionRequest,
-    guardrailError: isGuardrailError ? message : null
+    guardrailError: typeof resultAsAny.guardrailError === 'string' ? resultAsAny.guardrailError : isGuardrailError ? message : null
   }
 }
 
@@ -259,8 +267,8 @@ const dataNode = async (state: typeof AgentState.State) => {
  * @returns Updated state with RAG-generated answer
  */
 const knowledgeNode = async (state: typeof AgentState.State) => {
-  logger.info('Graph', `knowledgeNode - RAG query: "${state.message.slice(0, 80)}"`)
-  const response = await answerWithRag(state.message)
+  logger.info('Graph', 'knowledgeNode')
+  const response = await answerWithRag(state.uid, state.message)
   return { response }
 }
 
@@ -276,7 +284,7 @@ const judgeNode = async (state: typeof AgentState.State) => {
   const taskId = state.intent?.taskId
   if (!taskId) return { judgeWarning: null }
   
-  const result = await judgeTaskCompletion(taskId)
+  const result = await judgeTaskCompletion(state.uid, taskId)
   logger.info('Graph', `judgeNode - isConsistent=${result.isConsistent}${result.warning ? ' warning emitted' : ''}`)
 
   return {
@@ -298,7 +306,7 @@ const retroNode = async (state: typeof AgentState.State) => {
   if (!sprintId) {
     return { response: 'Please provide a Sprint ID (e.g., S-XXXX) to generate a retrospective.' }
   }
-  const summary = await generateRetrospective(sprintId)
+  const summary = await generateRetrospective(state.uid, sprintId)
   return { response: summary }
 }
 
@@ -323,7 +331,7 @@ const graph = new StateGraph(AgentState)
   .addEdge('strategy', END)
   .addConditionalEdges('data', (state) => {
     // Route to judge when a task is marked completed, to verify consistency with uploaded documents.
-    if (state.intent?.operation === 'update_task_status' 
+    if (state.refreshBacklog && state.intent?.operation === 'update_task_status'
         && (state.intent?.status === 'completed' || state.intent?.payload?.status === 'completed')) {
       return 'judge'
     }
@@ -338,6 +346,7 @@ const graph = new StateGraph(AgentState)
   .compile()
 
 export interface RunGraphInput {
+  uid: string
   sessionId: string
   message: string
   action?: { type: string; actionId?: string; payload?: Record<string, unknown> } | null
@@ -358,6 +367,7 @@ export async function runGraph(input: RunGraphInput) {
 
   const stream = graph.streamEvents(
     {
+      uid: input.uid,
       sessionId: input.sessionId,
       message: input.message,
       action: input.action ?? null,

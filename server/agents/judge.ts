@@ -1,7 +1,5 @@
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
-import { eq } from 'drizzle-orm'
-import { db } from '~~/server/db'
-import { tasks } from '~~/server/db/schema'
+import { getAgentRepository } from '../repositories/agent'
 import { searchDocuments } from './tools/rag-tools'
 import { useGeminiApiKey } from '~~/server/composables/useGeminiApiKey'
 import { logger } from '~~/server/utils/logger'
@@ -17,15 +15,15 @@ export interface JudgeResult {
  * @param taskId The ID of the task to evaluate.
  * @returns An object indicating consistency and an optional warning message.
  */
-export async function judgeTaskCompletion(taskId: string): Promise<JudgeResult> {
+export async function judgeTaskCompletion(uid: string, taskId: string): Promise<JudgeResult> {
   logger.info('Judge', `evaluating taskId=${taskId}`)
 
-  const task = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) })
+  const task = await getAgentRepository().getTask(uid, taskId)
   if (!task) {
     return { isConsistent: true }
   }
 
-  const matches = await searchDocuments(`${task.description} pago factura comprobante`, 4)
+  const matches = await searchDocuments(uid, `${task.description} pago factura comprobante`, 4)
   logger.info('Judge', `found ${matches.length} relevant chunk(s)`)
   if (matches.length === 0) {
     return { isConsistent: true }
@@ -62,7 +60,7 @@ Answer with a JSON object only, no explanation:
 
 Return isConsistent: false only if there is strong evidence in the documents that this specific payment is still pending, unpaid, or was not made. Return isConsistent: true if uncertain.`
 
-  const response = await model.invoke(prompt)
+  const response = await model.invoke(prompt, { signal: AbortSignal.timeout(45000) })
   const text = String(response.content).trim()
 
   try {

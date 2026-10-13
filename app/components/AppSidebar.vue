@@ -1,5 +1,10 @@
 <script setup lang="ts">
 const route = useRoute()
+const auth = useAuth()
+async function logout() {
+  await auth.logout()
+  await navigateTo('/login')
+}
 const { isDark, toggle, init } = useTheme()
 
 // Initializes the theme when the component is mounted to the DOM
@@ -34,6 +39,7 @@ const navItems = [
       </li>
     </ul>
 
+    <UButton icon="i-lucide-log-out" variant="ghost" aria-label="Cerrar sesión" :loading="auth.busy.value" @click="logout" />
     <div class="pt-3 w-full flex justify-center mt-2 px-2">
       <button
         class="flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200/20 bg-white/10 text-slate-300 hover:bg-primary/20 hover:text-primary-200 transition-colors cursor-pointer"

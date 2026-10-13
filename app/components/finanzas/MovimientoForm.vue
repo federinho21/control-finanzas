@@ -4,6 +4,7 @@ import type { MovementType } from '~~/shared/types/task'
 const emit = defineEmits<{ (e: 'created'): void }>()
 
 const { rocks } = useBacklog()
+const api = useApi()
 
 const form = reactive({
   fecha: new Date().toISOString().slice(0, 10),
@@ -20,7 +21,7 @@ async function onSubmit() {
   if (creating.value) return
   creating.value = true
   try {
-    await $fetch('/api/movimientos', {
+    await api('/api/movimientos', {
       method: 'POST',
       body: {
         fecha: form.fecha,

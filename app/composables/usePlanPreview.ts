@@ -22,7 +22,7 @@ export function usePlanPreview() {
   function setPlan(input: PlanPreviewInput) {
     plan.value = input.plan
     actionId.value = input.actionId
-    tempId.value = input.tempId ?? null
+    if (input.tempId !== undefined) tempId.value = input.tempId
   }
 
   // Sets a provisional document id independently of the plan (e.g. when a file is uploaded before plan generation).

@@ -1,81 +1,29 @@
-import { createError, eventHandler, readMultipartFormData } from 'h3'
-import { db } from '~~/server/db'
-import { documentChunks, documents } from '~~/server/db/schema'
-import { chunkText } from '~~/server/utils/chunker'
-import { embedText } from '~~/server/utils/embeddings'
-import { logger } from '~~/server/utils/logger'
-import { extractTextFromFile } from '~~/server/utils/pdf-parser'
+import { createError, eventHandler, getHeader } from 'h3'
+import { requireAuthOrigin, requireUser } from '../utils/auth'
+import { readLimitedBytes } from '../utils/request-input'
+import { getAgentRepository } from '../repositories/agent'
+import { getDocumentRepository } from '../repositories/documents'
+import { FinanceError } from '../repositories/finance-model'
+import { runDocumentUpload } from '../agents/data-agent'
 
-/**
- * Handles POST /api/upload to ingest a document, chunk its text, and store embeddings.
- * @param event Nitro event containing multipart form-data with file and optional tempId fields.
- * @returns Object with upload status, created document id, chunk count, and optional tempId.
- * @throws {H3Error} Throws a 400 error when file parsing, validation, or persistence fails.
- */
-export default eventHandler(async (event) => {
+export default eventHandler(async event => {
+  const user = await requireUser(event)
+  requireAuthOrigin(event)
   try {
-    const form = await readMultipartFormData(event)
-    const file = form?.find((item) => item.name === 'file' && item.filename)
-    const tempIdField = form?.find((item) => item.name === 'tempId' && !item.filename)
-    const tempId = tempIdField?.data ? Buffer.from(tempIdField.data).toString('utf8').trim() || null : null
-
-    if (!file?.data || !file.filename) {
-      throw new Error('No file uploaded')
-    }
-
-    logger.info('Upload', `file="${file.filename}" size=${file.data.byteLength}B`)
-
-    const text = await extractTextFromFile(Buffer.from(file.data), file.filename)
-    if (!text.trim()) {
-      throw new Error('The uploaded file has no readable content')
-    }
-    logger.info('Upload', `text extracted length=${text.length} chars`)
-
-    // Store the full extracted text in documents.content as a single string.
-    // This is an audit record of exactly what was parsed from the original file,
-    // and allows future re-chunking/re-embedding (e.g., model or chunk changes)
-    // without requiring the user to upload the file again. RAG reads documentChunks only.
-    const inserted = await db
-      .insert(documents)
-      .values({
-        filename: file.filename,
-        content: text,
-        tempId,
-        createdAt: new Date().toISOString()
-      })
-      .returning({ id: documents.id })
-
-    const documentId = inserted[0]?.id
-    if (!documentId) {
-      throw new Error('Could not create document record')
-    }
-
-    // Split text into overlapping chunks with RecursiveCharacterTextSplitter.
-    // Each chunk is embedded and saved in documentChunks as the
-    // searchable unit used by RAG retrieval.
-    const chunks = await chunkText(text)
-    logger.info('Upload', `chunked into ${chunks.length} chunks`)
-
-    for (const chunk of chunks) {
-      const embedding = await embedText(chunk)
-      await db.insert(documentChunks).values({
-        documentId,
-        chunkText: chunk,
-        embedding: JSON.stringify(embedding)
-      })
-    }
-
-    logger.info('Upload', `embeddings stored documentId=${documentId}`)
-
-    return {
-      ok: true,
-      filename: file.filename,
-      documentId,
-      chunks: chunks.length,
-      tempId: tempId ?? undefined
-    }
+    const contentType = getHeader(event, 'content-type') ?? ''
+    if (!contentType.startsWith('multipart/form-data;')) throw new FinanceError(415, 'Multipart form data required.')
+    await getAgentRepository().quota(user.uid, 'upload', 5, 3600000)
+    const bytes = await readLimitedBytes(event, 6 * 1024 * 1024)
+    const request = new Request('http://localhost', { method: 'POST', headers: { 'content-type': contentType }, body: new Uint8Array(bytes) })
+    const form = await request.formData()
+    const entries = [...form.entries()]
+    if (entries.length !== 1 || entries[0]?.[0] !== 'file') throw new FinanceError(400, 'Upload exactly one file.')
+    const file = form.get('file')
+    if (!file || typeof file === 'string') throw new FinanceError(400, 'File required.')
+    return await runDocumentUpload(user.uid, { filename: file.name, mime: file.type, bytes: Buffer.from(await file.arrayBuffer()) }, getDocumentRepository())
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Upload failed'
-    throw createError({ statusCode: 400, statusMessage: message })
+    if (error instanceof FinanceError) throw createError({ statusCode: error.statusCode, statusMessage: error.message })
+    if (error && typeof error === 'object' && 'statusCode' in error) throw error
+    throw createError({ statusCode: 503, statusMessage: 'Document processing unavailable. Retry later.' })
   }
 })

@@ -13,6 +13,8 @@ export interface AgentIntent {
   | 'delete_rock'
   | 'list_backlog'
   | 'approve_tasks'
+  | 'cancel_plan'
+  | 'cancel_tasks'
   | 'approve_plan'
   | 'confirm_delete'
   | 'rag_query'
@@ -68,6 +70,7 @@ const CLASSIFIER_TIMEOUT_MS = 6000
 function resolveDeterministicActionIntent(input: {
   action?: { type: string; actionId?: string; payload?: Record<string, unknown> }
 }): AgentIntent | null {
+  if (input.action?.type === 'cancel_plan' || input.action?.type === 'cancel_tasks') return { route: 'data', operation: input.action.type, actionId: input.action.actionId, confidence: 1 }
   if (input.action?.type === 'approve_tasks') {
     return {
       route: 'data',
@@ -120,6 +123,7 @@ function resolveDeterministicActionIntent(input: {
     return {
       route: 'data',
       operation: 'update_task_status',
+      actionId: input.action.actionId,
       taskId: String(input.action.payload?.taskId ?? ''),
       payload: input.action.payload,
       confidence: 1,
@@ -226,12 +230,12 @@ function normalizeConfidence(value: unknown): number {
  */
 function normalizeEntityId(value: unknown, prefix: 'R' | 'S' | 'T'): string | undefined {
   const raw = String(value ?? '').trim().toUpperCase()
-  const pattern = prefix === 'R' ? /^R-[A-Z0-9]{4}$/ : prefix === 'S' ? /^S-[A-Z0-9]{4}$/ : /^T-[A-Z0-9]{4}$/
+  const pattern = prefix === 'R' ? /^R-[A-Z0-9]{4}$/ : prefix === 'S' ? /^S-[A-Z0-9]{4}$/ : /^(T-[A-Z0-9]{4}|U-[A-Z0-9]{4}|[A-F0-9]{64})$/
   if (!pattern.test(raw)) {
     return undefined
   }
 
-  return raw
+  return prefix === 'T' && /^[A-F0-9]{64}$/.test(raw) ? raw.toLowerCase() : raw
 }
 
 /**
@@ -422,6 +426,7 @@ async function classifyIntentWithGemini(message: string, hasPendingPlan: boolean
  * @returns The detected AgentIntent for routing to appropriate handler
  */
 export async function detectIntent(input: {
+  uid: string
   message: string
   sessionId: string
   action?: { type: string; actionId?: string; payload?: Record<string, unknown> }
@@ -434,7 +439,7 @@ export async function detectIntent(input: {
     return deterministicIntent
   }
 
-  const pendingPlanEntry = findPendingPlanBySessionId(input.sessionId)
+  const pendingPlanEntry = await findPendingPlanBySessionId(input.uid, input.sessionId)
   const hasPendingPlan = !!pendingPlanEntry
 
   try {
