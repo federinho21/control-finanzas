@@ -35,7 +35,17 @@ Before the source commit:
 
 This is preparation-branch verification, NOT a production security approval. Tests that need real Google/Gemini/Storage/IAM or Linux Netlify runtime were not silently counted as passed.
 
-## Still pending
+## Preview runtime checkpoint
+
+Draft PR: https://github.com/federinho21/control-finanzas/pull/1. Netlify successfully built commit `4c7f109` as deploy `6aceb3a516f9052d20533b92` in context `deploy-preview`, with a Node 24 streaming server Function and no production publication (`published_at: null`). Preview URL: https://deploy-preview-1--control-finazas.netlify.app.
+
+HTTP verification found 502 responses, including `/login` and `/api/auth/me`, despite the successful build. The cold-start error was `ERR_REQUIRE_ESM`: `jwks-rsa@4.1.0` requires `jose@6.2.12`. Local reproduction on Node 24 with `--no-experimental-require-module` failed identically; a no-network assertion importing Firebase Auth with `--experimental-require-module` passed.
+
+AWS Lambda disables this feature by default and documents a `NODE_OPTIONS` override: https://docs.aws.amazon.com/lambda/latest/dg/lambda-nodejs.html#nodejs-experimental-features. The override is experimental and affects AWS support/SLA eligibility; it is NOT a production sign-off. Review bundling compatibility or an upstream stable resolution before production.
+
+Netlify acknowledged upserts of the four public Firebase SDK variables and `FIREBASE_PROJECT_ID`, scoped to `deploy-preview` only. It also acknowledged preview Functions variables `NODE_OPTIONS=--experimental-require-module` and `AUTH_ORIGIN=https://deploy-preview-1--control-finazas.netlify.app`. No private credentials or Gemini keys were supplied. The environment reader still returned an empty list, so acknowledgement alone does not prove runtime propagation. A rebuild and real HTTP verification remain required. This Origin is specific to PR 1; other previews require deliberate configuration.
+
+## Remaining release gates
 
 - Source publication is confirmed; select this branch for protected staging/preview without replacing production `main`.
 - Server Firebase credentials and verified least-privilege IAM; do not paste private keys in chat.
