@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { amountMinor, amountText, costaRicaDate, deriveSprintStatus, importedPayment, monthWindow, movementInput, summarize } from '../server/repositories/finance-model'
+import * as financeModel from '../server/repositories/finance-model'
 
 test('decimal money uses exact integer minor units and rejects excessive precision/invalid values', () => {
   assert.equal(amountMinor('0.10') + amountMinor('0,20'), 30)
@@ -44,4 +45,14 @@ test('summary avoids 0.1+0.2 drift and derives sprint status consistently', () =
   assert.equal(deriveSprintStatus([{ status: 'completed' }]), 'completed')
   assert.equal(deriveSprintStatus([{ status: 'on_hold' }]), 'on_hold')
   assert.equal(deriveSprintStatus([{ status: 'completed' }, { status: 'pending' }]), 'in_progress')
+})
+
+test('chat movement drafts preserve major currency units across validation and forbid hidden authority', () => {
+  const draft = { fecha: costaRicaDate(), tipo: 'gasto', descripcion: 'Almuerzo', categoria: 'Comida', monto: '25', currency: 'CRC' }
+  const parsed = financeModel.movementDraft.parse(draft)
+  assert.equal(parsed.monto, '25.00')
+  assert.deepEqual(financeModel.movementDraft.parse(parsed), parsed)
+  for (const extra of [{ userId: 'victim' }, { rockId: 'R-AAAA' }, { currency: 'USD' }, { monto: '0' }, { monto: '1.005' }, { fecha: '9999-12-31' }, { categoria: '' }]) {
+    assert.equal(financeModel.movementDraft.safeParse({ ...draft, ...extra }).success, false)
+  }
 })

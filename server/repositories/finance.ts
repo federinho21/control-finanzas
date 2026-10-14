@@ -163,20 +163,22 @@ export class FinanceRepository {
   }
 
   async createMovement(uid: string, input: z.output<typeof movementInput>) {
+    return this.firestore.runTransaction(tx => this.createMovementInTransaction(tx, uid, input))
+  }
+
+  protected async createMovementInTransaction(tx: Transaction, uid: string, input: z.output<typeof movementInput>) {
     const deadline = input.fecha ?? costaRicaDate()
     const window = monthWindow(deadline.slice(0, 7))
     const id = `T-${idSuffix()}`
-    return this.firestore.runTransaction(async tx => {
-      const anchors = await this.anchors(tx, uid, input.rockId, window.startDate, window.endDate)
-      const ref = this.collection(uid, 'payments').doc(id)
-      const [record, hidden] = await Promise.all([tx.get(ref), tx.get(this.collection(uid, 'hiddenPayments').doc(id))])
-      if (record.exists || hidden.exists) throw new FinanceError(409, 'Generated ID collision. Retry the request.')
-      const status = await this.statusOnInsert(tx, uid, anchors)
-      anchors.commit()
-      if (status) tx.update(this.collection(uid, 'sprints').doc(anchors.sprintId), { status })
-      tx.create(ref, { id, userId: uid, ...anchorsFields(anchors), description: input.descripcion, owner: input.categoria, deadline, priority: 'medium', status: 'pending', monto: amountText(input.monto), amountMinor: input.monto, currency: 'CRC', tipo: input.tipo, origin: 'manual', createdAt: new Date().toISOString() })
-      return { id }
-    })
+    const anchors = await this.anchors(tx, uid, input.rockId, window.startDate, window.endDate)
+    const ref = this.collection(uid, 'payments').doc(id)
+    const [record, hidden] = await Promise.all([tx.get(ref), tx.get(this.collection(uid, 'hiddenPayments').doc(id))])
+    if (record.exists || hidden.exists) throw new FinanceError(409, 'Generated ID collision. Retry the request.')
+    const status = await this.statusOnInsert(tx, uid, anchors)
+    anchors.commit()
+    if (status) tx.update(this.collection(uid, 'sprints').doc(anchors.sprintId), { status })
+    tx.create(ref, { id, userId: uid, ...anchorsFields(anchors), description: input.descripcion, owner: input.categoria, deadline, priority: 'medium', status: 'pending', monto: amountText(input.monto), amountMinor: input.monto, currency: 'CRC', tipo: input.tipo, origin: 'manual', createdAt: new Date().toISOString() })
+    return { id }
   }
 
   async createCuota(uid: string, input: z.output<typeof cuotaInput>) {

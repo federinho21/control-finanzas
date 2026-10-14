@@ -2,7 +2,7 @@ import { Timestamp, type DocumentSnapshot, type Transaction } from 'firebase-adm
 import { customAlphabet } from 'nanoid'
 import { z } from 'zod'
 import { FinanceRepository } from './finance'
-import { amountMinor, amountText, costaRicaDate, dateInput, FinanceError, recordId, statusInput } from './finance-model'
+import { amountMinor, amountText, costaRicaDate, dateInput, FinanceError, movementDraft, movementInput, recordId, statusInput } from './finance-model'
 import { getFirebaseFirestore } from '../firebase/admin'
 
 const suffix = customAlphabet('1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ', 4)
@@ -10,7 +10,7 @@ const label = z.string().trim().min(1).max(200)
 export const taskDraft = z.object({ description: label, owner: label, deadline: z.string().max(10), priority: z.enum(['high', 'medium', 'low']), selected: z.boolean().optional(), monto: z.string().max(16).optional(), tipo: z.enum(['ingreso', 'gasto', 'retiro']).optional() }).strict()
 export const planDraft = z.object({ rock: z.object({ name: label, description: z.string().max(2000), deadline: z.string().max(10) }).strict(), sprints: z.array(z.object({ name: label, startDate: z.string().max(10), endDate: z.string().max(10), tasks: z.array(taskDraft).max(100) }).strict()).min(1).max(12) }).strict()
 export const actionSession = z.string().uuid()
-export type PendingKind = 'plan' | 'tasks' | 'delete' | 'status'
+export type PendingKind = 'plan' | 'tasks' | 'delete' | 'status' | 'movement'
 
 function owner(snapshot: DocumentSnapshot, uid: string) {
   const data = snapshot.data()
@@ -51,6 +51,7 @@ export class AgentRepository extends FinanceRepository {
     actionSession.parse(sessionId); actionSession.parse(id)
     if (Buffer.byteLength(JSON.stringify(payload)) > 180000) throw new FinanceError(413, 'Proposal is too large.')
     if (kind === 'plan') planDraft.parse(payload)
+    if (kind === 'movement') payload = movementDraft.parse(payload)
     await this.actions(uid).doc(id).create({ userId: uid, sessionId, kind, payload, state: 'pending', version: 0, createdAt: Date.now(), expiresAt: Date.now() + 3600000, purgeAt: Timestamp.fromMillis(Date.now() + 86400000) })
   }
   actionInTransaction(tx: Transaction, uid: string, sessionId: string, id: string, kind: PendingKind) {
@@ -113,6 +114,16 @@ export class AgentRepository extends FinanceRepository {
       for (const write of writes) tx.create(this.firestore.doc(write.path), write.data)
       if (document) tx.update(document.ref, { rockId, expiresAt: null })
       const result = { rockId, sprintIds, taskIds }
+      tx.update(action.ref, { state: 'consumed', result, consumedAt: Date.now() })
+      return result
+    })
+  }
+  async approveMovement(uid: string, sessionId: string, id: string) {
+    return this.firestore.runTransaction(async tx => {
+      const action = await this.actionInTransaction(tx, uid, sessionId, id, 'movement')
+      if (action.data.state === 'consumed') return action.data.result
+      const { currency, ...draft } = movementDraft.parse(action.data.payload)
+      const result = await this.createMovementInTransaction(tx, uid, movementInput.parse(draft))
       tx.update(action.ref, { state: 'consumed', result, consumedAt: Date.now() })
       return result
     })

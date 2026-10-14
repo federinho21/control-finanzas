@@ -486,3 +486,48 @@ test('chat category/recent/cuota queries use only the authenticated owner and ne
     if (previous.mode === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previous.mode
   }
 })
+
+test('movement approval binds owner/session/kind and concurrent replay creates one exact-amount movement', async () => {
+  const repo = new AgentRepository(db)
+  const uid = 'MOV-A', session = crypto.randomUUID(), actionId = crypto.randomUUID()
+  const draft = { fecha: costaRicaDate(), tipo: 'gasto', descripcion: 'Almuerzo', categoria: 'Comida', monto: '25.00', currency: 'CRC' }
+  await repo.saveAction(uid, session, actionId, 'movement', draft)
+  assert.equal((await db.collection(`users/${uid}/payments`).get()).size, 0)
+  for (const [owner, ownerSession] of [['MOV-B', session], [uid, crypto.randomUUID()]]) {
+    await assert.rejects(async () => repo.approveMovement(owner!, ownerSession!, actionId))
+  }
+  const wrongKind = crypto.randomUUID()
+  await repo.saveAction(uid, session, wrongKind, 'status', { taskId: 'T-AAAA' })
+  await assert.rejects(async () => repo.approveMovement(uid, session, wrongKind))
+  const results = await Promise.all(Array.from({ length: 4 }, () => repo.approveMovement(uid, session, actionId)))
+  assert.equal(new Set(results.map(row => row.id)).size, 1)
+  const payments = await db.collection(`users/${uid}/payments`).get()
+  assert.equal(payments.size, 1)
+  assert.equal(payments.docs[0]!.data().monto, '25.00')
+  assert.equal(payments.docs[0]!.data().amountMinor, 2500)
+  assert.equal(payments.docs[0]!.data().userId, uid)
+  assert.equal((await db.doc(`users/${uid}/pendingActions/${actionId}`).get()).data()?.state, 'consumed')
+  assert.equal((await db.collection('payments').where('userId', '==', uid).get()).size, 0)
+})
+
+test('canceled, expired or corrupt movement approvals cannot write or consume pending financial intent', async () => {
+  const repo = new AgentRepository(db), uid = 'MOV-SAFE', session = crypto.randomUUID()
+  const draft = { fecha: costaRicaDate(), tipo: 'gasto', descripcion: 'Prueba', categoria: 'Prueba', monto: '0.10', currency: 'CRC' }
+  const canceled = crypto.randomUUID()
+  await repo.saveAction(uid, session, canceled, 'movement', draft)
+  await repo.cancelAction(uid, session, canceled, 'movement')
+  await assert.rejects(async () => repo.approveMovement(uid, session, canceled))
+  const expired = crypto.randomUUID()
+  await repo.saveAction(uid, session, expired, 'movement', draft)
+  await db.doc(`users/${uid}/pendingActions/${expired}`).update({ expiresAt: 0 })
+  await assert.rejects(async () => repo.approveMovement(uid, session, expired))
+  const corrupt = crypto.randomUUID()
+  await repo.saveAction(uid, session, corrupt, 'movement', draft)
+  await db.doc(`users/${uid}/pendingActions/${corrupt}`).update({ payload: { ...draft, userId: 'MOV-B' } })
+  await assert.rejects(async () => repo.approveMovement(uid, session, corrupt))
+  assert.equal((await db.doc(`users/${uid}/pendingActions/${corrupt}`).get()).data()?.state, 'pending')
+  assert.equal((await db.collection(`users/${uid}/payments`).get()).size, 0)
+  await db.doc(`users/${uid}/pendingActions/${corrupt}`).update({ payload: draft })
+  const result = await repo.approveMovement(uid, session, corrupt)
+  assert.equal((await db.doc(`users/${uid}/payments/${result.id}`).get()).data()?.monto, '0.10')
+})

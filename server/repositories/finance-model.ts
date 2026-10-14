@@ -43,6 +43,10 @@ export const movementInput = z.object({
   fecha: dateInput.optional(), tipo: z.enum(['ingreso', 'gasto', 'retiro']),
   descripcion: label, categoria: label, monto: moneyInput, rockId: recordId.optional()
 }).strict()
+export const movementDraft = movementInput.omit({ rockId: true }).extend({
+  fecha: dateInput.refine(date => date <= costaRicaDate(), 'Los movimientos futuros requieren otra planificación.'),
+  currency: z.literal('CRC')
+}).transform(({ monto, ...rest }) => ({ ...rest, monto: amountText(monto) }))
 export const cuotaInput = z.object({ nombre: label, frecuencia: z.enum(['mensual', 'anual']), monto: moneyInput, categoria: label }).strict()
 export const cuotaPaymentInput = z.object({ action: z.literal('marcar_pagada').optional(), rockId: recordId.optional() }).strict()
 export const statusInput = z.object({ status: z.enum(['pending', 'in_progress', 'completed', 'on_hold']) }).strict()
