@@ -2,5 +2,5 @@
   "extends": "../node_modules/.cache/nuxt/.nuxt/tsconfig.server.json",
   "files": ["../node_modules/.cache/nuxt/.nuxt/types/nitro-imports.d.ts"],
   "compilerOptions": { "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler", "strict": true, "skipLibCheck": true, "noEmit": true, "types": ["node"], "paths": { "~~/*": ["../*"], "~/*": ["../app/*"] } },
-  "include": ["../server/repositories/*.ts", "../scripts/*.ts", "../shared/types/pdf-parse.d.ts", "finance-model.test.ts", "migration.test.ts", "netlify-compat.test.ts", "netlify-build.smoke.ts"]
+  "include": ["../server/repositories/*.ts", "../scripts/*.ts", "../shared/types/pdf-parse.d.ts", "finance-model.test.ts", "migration.test.ts", "netlify-compat.test.ts", "netlify-build.smoke.ts", "chat-behavior.test.ts"]
 }

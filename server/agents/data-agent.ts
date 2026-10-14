@@ -2,7 +2,7 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
 import { z } from 'zod'
 import type { FinanceCommand, FinanceRepository } from '../repositories/finance'
 import { getAgentRepository, planDraft } from '../repositories/agent'
-import { cuotaInput, FinanceError, recordId } from '../repositories/finance-model'
+import { costaRicaDate, cuotaInput, FinanceError, monthInput, recordId } from '../repositories/finance-model'
 import { useGeminiApiKey } from '../composables/useGeminiApiKey'
 import type { DocumentRepository } from '../repositories/documents'
 
@@ -24,6 +24,36 @@ interface DataOperationInput {
   uid: string; sessionId: string; operation?: string; message: string
   rockId?: string; sprintId?: string; taskId?: string; status?: string; actionId?: string
   payload?: Record<string, unknown>
+}
+
+export function resolveReportMonth(message: string, today = costaRicaDate()): string | undefined {
+  if (/\b\d{4}-\d{2}-\d{2}\b/.test(message)) return undefined
+  const months = [...new Set(message.match(/\b\d{4}-\d{2}\b/g) ?? [])]
+  if (months.length) return months.length === 1 && monthInput.safeParse(months[0]).success ? months[0] : undefined
+  const current = /\b(este mes|mes actual|this month)\b/i.test(message)
+  const previous = /\b(mes pasado|mes anterior|last month)\b/i.test(message)
+  if (current === previous) return undefined
+  if (current) return today.slice(0, 7)
+  const [year, month] = today.split('-').map(Number)
+  const result = new Date(Date.UTC(year!, month! - 2, 1)).toISOString().slice(0, 7)
+  return monthInput.safeParse(result).success ? result : undefined
+}
+
+export function formatMonthlyReport(summary: { month: string; ingresos: number; gastos: number; retiros: number; balance: number; excludedMovements: number }, message: string) {
+  const text = message.normalize('NFD').replace(/\p{M}/gu, '')
+  if (/\b(categorias?|comercios?)\b/i.test(text)) return 'Fede, esta consulta solo calcula totales mensuales; todavía no responde desgloses por categoría o comercio. Puedes consultarlos en el dashboard.'
+  const metrics = [
+    { key: 'ingresos' as const, pattern: /\b(ingresos?|ingrese|recibi|gane)\b/i },
+    { key: 'gastos' as const, pattern: /\b(gastos?|gaste)\b/i },
+    { key: 'retiros' as const, pattern: /\b(retiros?|retire)\b/i },
+    { key: 'balance' as const, pattern: /\b(balance|saldo)\b/i }
+  ].filter(metric => metric.pattern.test(text))
+  const excluded = summary.excludedMovements ? `\n${summary.excludedMovements} movimientos excluidos por moneda distinta de CRC o datos pendientes de revisión.` : ''
+  if (metrics.length === 1 && !/\b(resumen|reporte|summary|report)\b/i.test(message)) {
+    const key = metrics[0]!.key
+    return `Fede, ${key === 'balance' ? 'tu balance' : `tus ${key}`} de ${summary.month}: ₡${summary[key].toFixed(2)}.${excluded}`
+  }
+  return `Fede, resumen de ${summary.month}:\n- Ingresos: ₡${summary.ingresos.toFixed(2)}\n- Gastos: ₡${summary.gastos.toFixed(2)}\n- Retiros: ₡${summary.retiros.toFixed(2)}\n- Balance: ₡${summary.balance.toFixed(2)}${excluded}`
 }
 
 async function explain(data: unknown, question: string) {
@@ -121,10 +151,10 @@ export async function runDataOperation(input: DataOperationInput): Promise<Recor
       }
       case 'delete_cuota': await repository.deleteCuota(input.uid, recordId.parse(input.taskId ?? payload.cuotaId)); return { message: 'Cuota deleted.', refreshBacklog: true }
       case 'monthly_report': {
-        const month = typeof payload.month === 'string' ? payload.month : input.message.match(/\d{4}-\d{2}/)?.[0]
-        if (!month) return { message: 'Specify a month as YYYY-MM.' }
+        const month = typeof payload.month === 'string' ? monthInput.parse(payload.month) : resolveReportMonth(input.message)
+        if (!month) return { message: 'Fede, indica un único mes como YYYY-MM, «este mes» o «mes pasado». Para un día o una comparación de períodos necesito otra consulta.' }
         const result = await repository.monthlySummary(input.uid, month)
-        return { message: `Summary for ${month}:\n- Ingresos: ₡${result.ingresos.toFixed(2)}\n- Gastos: ₡${result.gastos.toFixed(2)}\n- Retiros: ₡${result.retiros.toFixed(2)}\n- Balance: ₡${result.balance.toFixed(2)}\nExcluded for review: ${result.excludedMovements}` }
+        return { message: formatMonthlyReport(result, input.message) }
       }
       default: return { message: 'Please clarify which financial operation you need.' }
     }

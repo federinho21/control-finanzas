@@ -265,7 +265,7 @@ function defaultOperationForRoute(route: RouteName): IntentOperation | undefined
  * @returns A clarification question for the user
  */
 function buildClarificationQuestion(_message: string): string {
-  return 'Could you share what you want to do next? I can generate a monthly budget, register movements, manage cuotas fijas, query financial documents, or show a monthly summary.'
+  return 'Fede, no pude interpretar tu solicitud con seguridad. ¿Quieres consultar movimientos, ver un resumen mensual o preparar un presupuesto?'
 }
 
 /**
@@ -274,17 +274,7 @@ function buildClarificationQuestion(_message: string): string {
  * @param message - The user input message
  * @returns A safe fallback AgentIntent
  */
-function buildSafeFallbackIntent(message: string): AgentIntent {
-  if (message.trim().length >= 25) {
-    return {
-      route: 'strategy',
-      operation: 'generate_plan',
-      confidence: 0,
-      explicitBacklogRequest: false,
-      needsClarification: false
-    }
-  }
-
+export function buildSafeFallbackIntent(message: string): AgentIntent {
   return {
     route: 'END',
     confidence: 0,
@@ -345,7 +335,7 @@ Rules:
 - Use route data with operation "list_cuotas" when the user asks to show/list the fixed subscriptions (cuotas).
 - Use route data with operation "mark_cuota_pagada" when the user wants to mark a cuota as paid. Must include a cuota ID (U-XXXX).
 - Use route data with operation "delete_cuota" when the user wants to delete a cuota. Must include a cuota ID (U-XXXX).
-- Use route data with operation "monthly_report" when the user asks for a monthly summary, balance report, or financial overview for a month (YYYY-MM).
+- Use route data with operation "monthly_report" for monthly income, expenses, withdrawals, balance or summary questions. Accept an explicit YYYY-MM or relative expressions such as "este mes", "mes pasado", "this month" and "last month"; the data agent resolves the period. Do not ask for a technical ID or route these questions to document search.
 - Use route retro with generate_retrospective when user asks for a monthly analysis/review or period retrospective. Must include a Sprint ID (S-XXXX) in the message.
 - Use route "data" with operation "modify_plan" ONLY when IMPORTANT CONTEXT says a plan is pending AND the user wants to add/remove/change sprints or tasks in that plan.
 - When operation is "update_sprint_status", extract the intended status from the message if mentioned. Valid values: planned, in_progress, completed, on_hold. Set "status" to null if not mentioned.

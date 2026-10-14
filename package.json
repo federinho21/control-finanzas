@@ -6,6 +6,7 @@
     "build:netlify": "nuxt build --preset netlify",
     "build:test": "nuxt build --preset node-server --dotenv tests/fixtures/build.env",
     "test:netlify": "tsx --tsconfig tests/tsconfig.finance.json --test tests/netlify-compat.test.ts",
+    "test:chat:behavior": "tsx --tsconfig tests/tsconfig.finance.json --test tests/chat-behavior.test.ts",
     "test:netlify:build": "tsx tests/netlify-build.smoke.ts",
     "test:security:dependencies": "tsx --test tests/dependency-security.test.ts",
     "migrate:firestore": "tsx scripts/migrate-firestore.ts",
