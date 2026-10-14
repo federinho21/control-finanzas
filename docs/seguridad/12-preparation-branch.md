@@ -79,6 +79,26 @@ Fede reported empty movements after login. Netlify request logs showed 503 for `
 
 The bundled Firebase Admin Firestore initializer left `require('@google-cloud/firestore')` inside a try/catch in an ESM chunk. The dependency was present, but initialization threw `ReferenceError: require is not defined`, wrapped as `firestore/missing-dependencies`. A new plain-Node compiled-client regression using a generated dummy certificate reproduced the failure WITHOUT contacting Firebase. Setting Nitro `commonJS.ignoreTryCatch=false` converts that require through the bundler rather than ignoring it. The regression then passed, with the existing 15 compiled route checks, 5 Netlify compatibility tests and finance typecheck. No dependency, permission, data migration or ownership-filter change is part of this fix. Real authenticated financial HTTP reads still require verification from Fede's session after the preview rebuild.
 
+## Monthly-summary index readiness
+
+Fede subsequently confirmed all movements appear. Post-fix Netlify logs show 200 for `/api/tasks` and `/api/dashboard`; the October monthly summary still returned 503. Operator read-only reproduction confirmed Android's timestamp-filtered query returns 19 rows, while the nested manual-payments query fails with `FAILED_PRECONDITION` (missing index). The real-emulator isolation suite (27 tests) and finance-model suite (5 tests) passed again; emulator success does not validate production composite-index availability.
+
+After explicit approval to create ONLY the missing index, created `projects/wallet-payment-tracker-fede/databases/(default)/collectionGroups/payments/indexes/CICAgJiUpoMK`, collection scope, fields `userId ASCENDING`, `deadline DESCENDING`. The existing Android `userId/timestamp` index was READY and was not modified. The new definition already exists in `firestore.indexes.json`; no whole-config deploy, rule/TTL publication, source-data modification or billing change was performed. Creation initially reported INITIALIZING; require READY and retry the same real query before declaring the summary working. Do not delete the Android index when reconciling deployment configuration.
+
+Follow-up verification: the new index reached READY. An initial query immediately after the state transition still failed; retrying the actual repository-shaped nested monthly query succeeded with 0 manual records (expected: existing records are in Android's top-level collection). Android's October owner query had independently succeeded with 19 records. This resolves the reproduced index prerequisite, but the live `/api/resumen` response and displayed totals must still be confirmed in Fede's browser. No credential or document content was printed during the query checks.
+
+## Preview document-write enablement
+
+Fede confirmed the displayed monthly totals are correct, then authorized continuing to enable/test web writes. Before the grant, the real-emulator isolation suite (27 tests) and compiled Netlify smoke checks (15 routes plus plain-Node cold start/Firestore initialization) passed again. Tests covered owned manual creation, concurrent cuota payment idempotency, cross-user mutation rejection and preservation of imported Android records.
+
+Added a separate custom role `projects/wallet-payment-tracker-fede/roles/cfFirestorePreviewWrite` with ONLY `datastore.entities.create`, `datastore.entities.update`, `datastore.entities.delete`, bound to the existing dedicated preview service account. Used policy etag, verified the exact role permissions and preserved all earlier bindings. No extra key, administrative/billing/storage permission or financial record was created by the operator. No production merge/deploy or rules/TTL publication occurred.
+
+The previous read-only restriction is now superseded for this identity. The credential remains restricted to the trusted preparation branch, but IAM document permissions apply project-wide, not only to a UID or the `users` collection. Runtime repository ownership checks enforce user isolation; top-level Android captures remain a read-only source in application code. The UI's deletion of an imported payment writes an owner hide marker, never deletes the Android source; imported completed status cannot be modified.
+
+Live create/update/delete and cuota payment acceptance are still pending Fede's browser session. A manually created test movement changes totals until removed; creating the first one may also persist the default account/period even after deleting that movement. Avoid using an Android source payment for destructive acceptance. Chat is not signed off by this permission grant: its Firestore quota writes are now permitted, but model key/runtime, approval indexes and live acceptance remain separate gates. Storage/PDF upload is still unresolved.
+
+Rollback: remove only the preview identity's `cfFirestorePreviewWrite` binding to return to read-only, preserving its session/read roles. Previously created documents are not rolled back automatically.
+
 - Source publication is confirmed; select this branch for protected staging/preview without replacing production `main`.
 - Server Firebase credentials and verified least-privilege IAM; do not paste private keys in chat.
 - Netlify variables, exact Origin and Firebase authorized domains per trusted deploy context.
