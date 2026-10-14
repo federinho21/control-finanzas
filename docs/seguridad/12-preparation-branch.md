@@ -99,6 +99,14 @@ Live create/update/delete and cuota payment acceptance are still pending Fede's 
 
 Rollback: remove only the preview identity's `cfFirestorePreviewWrite` binding to return to read-only, preserving its session/read roles. Previously created documents are not rolled back automatically.
 
+## Gemini preview configuration
+
+Fede confirmed manual movement create/delete works in the live preview, then requested continuation to the assistant. The existing local Gemini API key successfully listed models and included the configured `gemini-3.6-flash`. Two minimal SDK requests using that exact model, without financial data, failed with 503 `Service Unavailable` / high demand (the second returned in 696 ms). Model listing is not generation acceptance. No model substitution or automatic retry policy was introduced.
+
+Stored the existing key directly in Netlify as secret `NUXT_GEMINI_API_KEY`, branch context ONLY `prepare/firebase-netlify`, scopes `builds`, `functions`, `runtime` (not post-processing). API metadata verified the secret flag and branch restriction. No secret was printed or committed; no user financial content was sent during the smoke tests. A preview rebuild must load this runtime value. Real authenticated SSE, financial answers and approvals remain pending; live generation is blocked by the observed provider availability error, not a claim of successful chat acceptance. Keep production contexts without this preview secret and keep the branch trusted.
+
+Rollback: remove the branch-specific Gemini secret and rebuild the preview. This does not revoke the user's original local key or undo prior Gemini usage. Gemini quota/cost and Netlify's 60-second streaming limit remain launch gates.
+
 - Source publication is confirmed; select this branch for protected staging/preview without replacing production `main`.
 - Server Firebase credentials and verified least-privilege IAM; do not paste private keys in chat.
 - Netlify variables, exact Origin and Firebase authorized domains per trusted deploy context.
