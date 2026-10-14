@@ -338,7 +338,7 @@ Rules:
 - Use route data with operation "query_sprint" when the user asks about the details or movements of a specific period (must include S-XXXX).
 - Use route data with operation "query_task" when the user asks about the details of a specific movement (must include T-XXXX).
 - Use route data with operation "create_cuota" when the user wants to register a fixed subscription/cuota. Message format: create cuota | Name | mensual/anual | Amount | Category.
-- Use route data with operation "list_cuotas" when the user asks to show/list the fixed subscriptions (cuotas).
+- Use route data with operation "list_cuotas" when the user asks to show/list fixed subscriptions (cuotas), their amounts, current paid/pending/paused states, or due dates. This is a read-only status query, NOT mark_cuota_pagada, a budget request, monthly_report, or document search. The data agent explains missing history/due dates; never invent a due date or ask for technical IDs just to list cuotas.
 - Use route data with operation "mark_cuota_pagada" when the user wants to mark a cuota as paid. Must include a cuota ID (U-XXXX).
 - Use route data with operation "delete_cuota" when the user wants to delete a cuota. Must include a cuota ID (U-XXXX).
 - Use route data with operation "monthly_report" for monthly income, expenses, withdrawals, balance or summary questions. Accept an explicit YYYY-MM or relative expressions such as "este mes", "mes pasado", "this month" and "last month"; the data agent resolves the period. Do not ask for a technical ID or route these questions to document search.

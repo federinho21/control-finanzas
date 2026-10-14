@@ -425,7 +425,7 @@ test('chat HTTP passes only cookie UID, validates input and preserves ordered SS
   } finally { http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve())) }
 })
 
-test('chat category/recent queries use only the authenticated owner and never mutate source payments', async () => {
+test('chat category/recent/cuota queries use only the authenticated owner and never mutate records', async () => {
   const previous = { project: process.env.FIREBASE_PROJECT_ID, mode: process.env.NODE_ENV }
   process.env.FIREBASE_PROJECT_ID = 'demo-control-finanzas'
   process.env.NODE_ENV = 'test'
@@ -460,6 +460,23 @@ test('chat category/recent queries use only the authenticated owner and never mu
     assert.match(String(filtered.message), /filtros por tipo/)
     const incomeCategory = await runDataOperation({ uid: 'CHAT-A', sessionId, operation: 'category_report', message: 'Ingresos por categoría este mes' })
     assert.match(String(incomeCategory.message), /solo de gastos/)
+    for (const [id, userId, status, ultimoPago] of [
+      ['U-QAA1', 'CHAT-A', 'active', null], ['U-QAA2', 'CHAT-A', 'active', costaRicaDate()],
+      ['U-QAA3', 'CHAT-A', 'paused', null], ['U-QBB1', 'CHAT-B', 'active', null]
+    ] as const) {
+      await db.doc(`users/${userId}/cuotas/${id}`).set({ userId, nombre: userId === 'CHAT-B' ? 'FOREIGN CUOTA' : id, frecuencia: 'mensual', monto: '20.00', categoria: 'Prueba', ultimoPago, status, createdAt: new Date().toISOString() })
+    }
+    const cuotasBefore = await db.collection(`users/CHAT-A/cuotas`).get()
+    const pending = await runDataOperation({ uid: 'CHAT-A', sessionId, operation: 'list_cuotas', message: '¿Qué cuotas tengo pendientes este mes?', payload: { userId: 'CHAT-B' } })
+    assert.ok(String(pending.message).includes('U\\-QAA1'))
+    assert.ok(!String(pending.message).includes('U\\-QAA2'))
+    assert.ok(!String(pending.message).includes('U\\-QAA3'))
+    assert.ok(!String(pending.message).includes('FOREIGN'))
+    const paid = await runDataOperation({ uid: 'CHAT-A', sessionId, operation: 'list_cuotas', message: 'Cuotas pagadas este mes' })
+    assert.ok(String(paid.message).includes('U\\-QAA2'))
+    assert.ok(!String(paid.message).includes('U\\-QAA1'))
+    const cuotasAfter = await db.collection(`users/CHAT-A/cuotas`).get()
+    assert.deepEqual(cuotasAfter.docs.map(row => row.data()), cuotasBefore.docs.map(row => row.data()))
     const after = await db.collection('payments').where('userId', 'in', ['CHAT-A', 'CHAT-B']).get()
     assert.deepEqual(after.docs.map(row => row.data()), before.docs.map(row => row.data()))
   } finally {

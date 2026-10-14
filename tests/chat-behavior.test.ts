@@ -3,9 +3,11 @@ import { test } from 'node:test'
 import { buildSafeFallbackIntent } from '../server/agents/supervisor'
 import * as dataAgent from '../server/agents/data-agent'
 import type { Task } from '../shared/types/task'
+import type { Cuota } from '../shared/types/cuota'
 
 const { formatMonthlyReport, resolveReportMonth } = dataAgent
 const { formatCategoryReport, formatRecentMovements } = dataAgent
+const { formatCuotaReport } = dataAgent
 
 test('classification failures never turn read requests or arbitrary text into budget proposals', () => {
   for (const message of ['Gracias', 'Muéstrame el movimiento T-BBBB.', 'Quiero registrar un gasto por almuerzo, no crear un presupuesto.', 'Quiero generar un presupuesto mensual']) {
@@ -112,4 +114,78 @@ test('recent movement display limits fail closed and stored text cannot inject m
   assert.ok(!result.includes('\nOtra línea'))
   const category = formatCategoryReport({ items: [malicious], excluded: 0 }, '2026-10')
   assert.ok(!category.includes('[link]('))
+})
+
+function cuota(id: string, overrides: Partial<Cuota> = {}): Cuota {
+  return { id, nombre: id, frecuencia: 'mensual', monto: '0.10', categoria: 'Prueba', ultimoPago: null, status: 'active', createdAt: '2026-10-01T18:00:00.000Z', ...overrides }
+}
+const quotaToday = '2026-10-14'
+const quotaRows = [
+  cuota('Pendiente mensual uno'),
+  cuota('Pendiente mensual dos', { monto: '0.20', ultimoPago: '2026-09-10' }),
+  cuota('Pagada mensual', { ultimoPago: '2026-10-10' }),
+  cuota('Pagada anual', { frecuencia: 'anual', monto: '120.00', ultimoPago: '2026-01-10' }),
+  cuota('Pendiente anual', { frecuencia: 'anual', monto: '120.00', ultimoPago: '2025-10-10' }),
+  cuota('Pausada', { status: 'paused' })
+]
+
+test('pending cuotas exclude paid and paused records and keep monthly/annual amounts separate', () => {
+  const result = formatCuotaReport(quotaRows, '¿Qué cuotas tengo pendientes este mes?', quotaToday)
+  assert.ok(result.includes('Pendiente mensual uno'))
+  assert.ok(result.includes('Pendiente mensual dos'))
+  assert.ok(result.includes('Pendiente anual'))
+  assert.ok(!result.includes('Pagada mensual'))
+  assert.ok(!result.includes('Pagada anual'))
+  assert.ok(!result.includes('- Pausada'))
+  assert.ok(result.includes('Mensuales: ₡0.30'))
+  assert.ok(result.includes('Anuales: ₡120.00'))
+  assert.match(result, /no indica.*vencimiento/)
+})
+
+test('paid, unpaid and paused cuota questions respect current-month and current-year periods', () => {
+  const paid = formatCuotaReport([...quotaRows, cuota('Anual recién pagada', { frecuencia: 'anual', ultimoPago: '2026-10-10' })], '¿Qué cuotas ya pagué este mes?', quotaToday)
+  assert.ok(paid.includes('Pagada mensual'))
+  assert.ok(paid.includes('Anual recién pagada'))
+  assert.ok(!paid.includes('Pagada anual'))
+  assert.match(paid, /último pago registrado en 2026-10/)
+  assert.ok(!paid.includes('Pendiente mensual'))
+  const unpaid = formatCuotaReport(quotaRows, 'Muéstrame las cuotas no pagadas', quotaToday)
+  assert.ok(unpaid.includes('Pendiente mensual uno'))
+  assert.ok(!unpaid.includes('Pagada mensual'))
+  const notPaid = formatCuotaReport(quotaRows, '¿Qué cuotas no pagué este mes?', quotaToday)
+  assert.ok(notPaid.includes('Pendiente mensual uno'))
+  assert.ok(!notPaid.includes('Pagada mensual'))
+  const paused = formatCuotaReport(quotaRows, 'Muéstrame cuotas pausadas', quotaToday)
+  assert.ok(paused.includes('Pausada'))
+  assert.ok(!paused.includes('Pendiente mensual'))
+  const annual = formatCuotaReport(quotaRows, 'Cuotas anuales pagadas este año', quotaToday)
+  assert.ok(annual.includes('Pagada anual'))
+  assert.ok(!annual.includes('Pagada mensual'))
+})
+
+test('cuota history and due dates are not invented from a single last-payment field', () => {
+  assert.match(formatCuotaReport(quotaRows, 'Cuotas pagadas el mes pasado', quotaToday), /historial|histórico/)
+  assert.match(formatCuotaReport(quotaRows, 'Cuotas de 2026-13', quotaToday), /mes válido/)
+  assert.match(formatCuotaReport(quotaRows, 'Cuotas anuales de 2026-13', quotaToday), /mes válido/)
+  assert.match(formatCuotaReport(quotaRows, 'Cuotas anuales pagadas en diciembre de 2026', quotaToday), /mes válido/)
+  assert.match(formatCuotaReport(quotaRows, 'Cuotas anuales de 2026-10-12', quotaToday), /mes válido/)
+  assert.match(formatCuotaReport(quotaRows, '¿Cuándo vencen mis cuotas?', quotaToday), /no.*fecha de vencimiento/i)
+})
+
+test('invalid payment dates, future payments and invalid amounts require review, not false pending balances', () => {
+  const rows = [cuota('Fecha inválida', { ultimoPago: '2026-99-99' }), cuota('Pago futuro', { ultimoPago: '2026-10-31' }), cuota('Monto inválido', { monto: '-100' })]
+  const result = formatCuotaReport(rows, 'Cuotas pendientes', quotaToday)
+  assert.match(result, /3 cuotas.*revisión/)
+  assert.ok(!result.includes('- Fecha inválida'))
+  assert.ok(!result.includes('- Pago futuro'))
+  assert.ok(!result.includes('₡-100'))
+})
+
+test('cuota output preserves records, escapes names and discloses display limits', () => {
+  const rows = Array.from({ length: 21 }, (_, index) => cuota(`Cuota ${index}`, { nombre: '![image](https://example.invalid)' }))
+  const before = JSON.stringify(rows)
+  const result = formatCuotaReport(rows, 'Lista mis cuotas', quotaToday)
+  assert.match(result, /20 de 21/)
+  assert.ok(!result.includes('![image]('))
+  assert.equal(JSON.stringify(rows), before)
 })

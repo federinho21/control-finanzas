@@ -2,7 +2,8 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
 import { z } from 'zod'
 import type { FinanceCommand, FinanceRepository } from '../repositories/finance'
 import { getAgentRepository, planDraft } from '../repositories/agent'
-import { amountMinor, amountText, costaRicaDate, cuotaInput, FinanceError, monthInput, recordId } from '../repositories/finance-model'
+import { amountMinor, amountText, costaRicaDate, cuotaInput, dateInput, FinanceError, monthInput, recordId } from '../repositories/finance-model'
+import type { Cuota } from '../../shared/types/cuota'
 import { useGeminiApiKey } from '../composables/useGeminiApiKey'
 import type { DocumentRepository } from '../repositories/documents'
 
@@ -57,6 +58,7 @@ export function formatMonthlyReport(summary: { month: string; ingresos: number; 
 }
 
 type MovementRows = Awaited<ReturnType<FinanceRepository['loadMovements']>>
+const reportPeriodPattern = /\b(mes|month|hoy|ayer|semana|week|day|year|ano|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|\d{4})\b|\d{1,4}[-/]\d{1,2}/i
 
 function movementLabel(value: string) {
   return value.replace(/\s+/g, ' ').slice(0, 200).replace(/([\\`*_{}\[\]()#+\-.!|<>~])/g, '\\$1')
@@ -86,6 +88,52 @@ export function formatRecentMovements(rows: MovementRows, limit = 5, month?: str
   const selected = sorted.slice(0, limit)
   const lines = selected.map(row => `- ${row.deadline} · ${row.tipo} · ₡${amountText(amountMinor(row.monto))} · ${movementLabel(row.owner || 'Sin categoría')} · ${movementLabel(row.description)}`)
   return `Fede, últimos ${selected.length} de ${rows.items.length} movimientos registrados ${scope}:\n${lines.join('\n')}${excluded}`
+}
+
+export function formatCuotaReport(cuotas: Cuota[], message: string, today = costaRicaDate()) {
+  const text = message.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+  const month = today.slice(0, 7), year = today.slice(0, 4)
+  const requestedMonth = resolveReportMonth(message, today)
+  const annual = /\banual(?:es)?\b/.test(text), monthly = /\bmensual(?:es)?\b/.test(text)
+  if (requestedMonth && requestedMonth !== month) return 'Fede, esta consulta muestra el estado actual. El último pago no permite reconstruir un historial completo de cuotas para otros períodos.'
+  const yearOnlyText = text.replace(/\b(este ano|ano actual|this year)\b/g, '').replace(new RegExp(`\\b${year}\\b`, 'g'), '')
+  const currentAnnualYear = annual && !monthly && !/\d{4}[-/]\d/.test(text) && !reportPeriodPattern.test(yearOnlyText)
+  if (!requestedMonth && reportPeriodPattern.test(text) && !currentAnnualYear) return 'Fede, indica el mes válido actual como YYYY-MM o «este mes». No hay un historial completo para consultar otros períodos.'
+  const pending = /\b(pendientes?|sin pagar|no (?:he |estan )?(?:pagad[ao]s?|pague)|por pagar)\b/.test(text)
+  const paid = /\b(pagad[ao]s?|pague|abonad[ao]s?)\b/.test(text.replace(/\bno (?:he |estan )?(?:pagad[ao]s?|pague)\b/g, ''))
+  const paused = /\b(pausad[ao]s?|suspendid[ao]s?)\b/.test(text)
+  const filters = [pending && 'pending', paid && 'paid', paused && 'paused'].filter(Boolean)
+  const rows = cuotas.map(cuota => {
+    let minor = 0
+    let last: string | null = null
+    let state: 'review' | 'paused' | 'paid' | 'pending' = 'review'
+    try {
+      minor = amountMinor(cuota.monto)
+      last = cuota.ultimoPago ? dateInput.parse(cuota.ultimoPago) : null
+      if (minor > 0 && (!last || last <= today)) state = cuota.status === 'paused' ? 'paused'
+        : last?.slice(0, cuota.frecuencia === 'mensual' ? 7 : 4) === (cuota.frecuencia === 'mensual' ? month : year) ? 'paid' : 'pending'
+    } catch {}
+    return { cuota, minor, state, last }
+  }).filter(row => annual === monthly || row.cuota.frecuencia === (annual ? 'anual' : 'mensual'))
+  const review = rows.filter(row => row.state === 'review').length
+  const paymentsThisMonth = paid && requestedMonth === month && !pending && !paused
+  const selected = rows.filter(row => paymentsThisMonth ? row.state !== 'review' && row.last?.slice(0, 7) === month : !filters.length || filters.includes(row.state)).sort((a, b) => a.cuota.nombre.localeCompare(b.cuota.nombre))
+  const reviewWarning = review ? `\n${review} cuotas requieren revisión; sus importes no se incluyen en los totales activos.` : ''
+  const caution = pending || (!filters.length && rows.some(row => row.state === 'pending')) ? '\nPendiente significa sin pago registrado en su período; no indica una fecha de vencimiento ni deuda vencida.' : ''
+  const dueDateWarning = /\b(vencen|vence|vencimiento|vencidas?|atrasad[ao]s?)\b/.test(text) ? '\nLas cuotas no tienen una fecha de vencimiento registrada.' : ''
+  if (!selected.length) return `Fede, no hay cuotas que coincidan con este filtro del estado actual.${reviewWarning}${dueDateWarning}${caution}`
+  const labels = { review: 'por revisar', paused: 'pausada', paid: 'pagada', pending: 'pendiente' }
+  const totals = { mensual: 0, anual: 0 }
+  const active = selected.filter(row => row.state !== 'review' && row.state !== 'paused')
+  for (const row of active) {
+    totals[row.cuota.frecuencia] += row.minor
+    if (!Number.isSafeInteger(totals[row.cuota.frecuencia])) throw new FinanceError(422, 'El total supera la precisión admitida.')
+  }
+  const lines = selected.slice(0, 20).map(({ cuota, minor, state, last }) => `- ${movementLabel(cuota.nombre)} · ${cuota.frecuencia} · ${state === 'review' ? 'datos por revisar' : `₡${amountText(minor)}`} · ${labels[state]}${last ? ` · último pago: ${last}` : ''}`)
+  const title = paymentsThisMonth ? `cuotas con último pago registrado en ${month}` : `estado actual de tus cuotas (mensuales: ${month}; anuales: ${year})`
+  const totalLines = (['mensual', 'anual'] as const).filter(frequency => active.some(row => row.cuota.frecuencia === frequency)).map(frequency => `- ${frequency === 'mensual' ? 'Mensuales' : 'Anuales'}: ₡${amountText(totals[frequency])}`)
+  const totalSection = active.length ? `\nImportes actuales de cuotas activas seleccionadas, por frecuencia:\n${totalLines.join('\n')}` : ''
+  return `Fede, ${title}:${dueDateWarning}\n${lines.join('\n')}${selected.length > 20 ? `\nMostrando 20 de ${selected.length} cuotas.` : ''}${totalSection}${reviewWarning}${caution}`
 }
 
 async function explain(data: unknown, question: string) {
@@ -176,7 +224,7 @@ export async function runDataOperation(input: DataOperationInput): Promise<Recor
         const result = await repository.createCuota(input.uid, cuotaInput.parse({ nombre: pieces[1], frecuencia: pieces[2]?.toLowerCase(), monto: pieces[3], categoria: pieces[4] }))
         return { message: `Cuota created: ${result.id}`, refreshBacklog: true }
       }
-      case 'list_cuotas': return { message: (await repository.listCuotas(input.uid)).map(row => `- ${row.id} · ${row.nombre} · ${row.frecuencia} · ₡${row.monto}`).join('\n') || 'No cuotas registered.' }
+      case 'list_cuotas': return { message: formatCuotaReport(await repository.listCuotas(input.uid), input.message) }
       case 'mark_cuota_pagada': {
         const row = await repository.payCuota(input.uid, recordId.parse(input.taskId ?? payload.cuotaId), payload.rockId === undefined ? undefined : recordId.parse(payload.rockId))
         return { message: `Cuota ${row.id} marked as paid.`, refreshBacklog: true }
@@ -186,7 +234,7 @@ export async function runDataOperation(input: DataOperationInput): Promise<Recor
       case 'recent_movements': {
         const month = resolveReportMonth(input.message)
         const text = input.message.normalize('NFD').replace(/\p{M}/gu, '')
-        const periodMentioned = /\b(mes|month|hoy|ayer|semana|week|day|year|ano|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|\d{4})\b|\d{1,4}[-/]\d{1,2}/i.test(text)
+        const periodMentioned = reportPeriodPattern.test(text)
         if (!month && periodMentioned) return { message: 'Fede, indica un único mes como YYYY-MM, «este mes» o «mes pasado».' }
         if (input.operation === 'category_report') {
           if (/\b(ingresos?|retiros?)\b/i.test(text)) return { message: 'Fede, el desglose por categoría disponible aquí es solo de gastos. Para ingresos o retiros puedes consultar el total mensual.' }

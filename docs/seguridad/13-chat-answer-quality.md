@@ -26,7 +26,7 @@ Also passed: 27 emulator integration tests, finance typecheck, Netlify build and
 
 ## Remaining capabilities
 
-Properly filtered pending cuotas, balance-aware spending guidance, conversational registration with confirmation, consistent Spanish for all other paths, and follow-up conversation context remain separate slices. Dependency security, real two-user acceptance, PDFs/Storage and runtime limits remain production launch gates.
+Balance-aware spending guidance, conversational registration with confirmation, consistent Spanish for all other paths, and follow-up conversation context remain separate slices. Complete cuota history and due-date scheduling are not implemented by the current status report. Dependency security, real two-user acceptance, PDFs/Storage and runtime limits remain production launch gates.
 
 ## Second corrective slice — categories and recent movements
 
@@ -44,3 +44,15 @@ Verification: 10 behavior tests and 28 emulator integration tests passed, includ
 The first local build reached Nitro completion but exceeded its 300-second command limit during packaging. A retry with a 600-second limit succeeded; all 15 compiled route checks and the plain-Node cold-start/Firestore initialization regressions passed. Retry log: `C:\Users\Fede\AppData\Local\Temp\opencode\finanzas-chat-read-slice2-build-retry.log`. Authenticated preview behavior still requires Fede's browser acceptance after the branch deploy. No financial records were changed in the real Firebase project.
 
 After adding the unsupported-filter guards, the final build, 28 integration tests, compiled smoke checks and typecheck passed again. Final build log: `C:\Users\Fede\AppData\Local\Temp\opencode\finanzas-chat-read-slice2-build-final.log`.
+
+## Third corrective slice — current cuota status
+
+The existing `list_cuotas` operation now formats owner-scoped data in Spanish and distinguishes active pending/paid, paused and review-required rows. Monthly coverage uses the current Costa Rica month; annual coverage uses the current year. Paused cuotas and invalid/future payment dates or invalid amounts do not enter active pending totals. The requested monthly/annual frequency and common paid/unpaid/paused wording are filtered deterministically. Merchant/name text is escaped and lists above 20 disclose the displayed limit.
+
+Amounts remain separated by monthly/annual frequency and are labelled current selected active cuota amounts, not overdue debt. No due dates or complete historical state are inferred from `ultimoPago`. Non-current or unsupported periods receive an explicit limitation. This formatter does not consume or reconstruct the separate cuota-payment ledger. No payment state is changed by a status question.
+
+Live acceptance exposed a distinction that the original fixture expectations missed: an annual cuota last paid in January must not be presented as a payment made this month. The stronger regression now requires its exclusion from explicit current-month paid queries, while including annual cuotas actually last paid in the current month; current-year annual coverage remains supported separately. Last-payment dates are displayed to make that distinction visible. This is a current-record/last-payment query, not a full cashflow or historical payment-amount report.
+
+Verification: 15 behavior tests (five new cuota groups) and 28 emulator integration tests passed. The integration test seeds owned paid/pending/paused cuotas and a foreign cuota, attempts payload UID injection, and proves owner-only answers and unchanged records. Tests also cover negated paid wording, invalid periods, invalid dates/amounts, separate exact-cent subtotals, escaping and display limits. Finance typecheck, final Netlify build and 15 compiled route checks plus cold-start/Firestore regressions passed. Build log: `C:\Users\Fede\AppData\Local\Temp\opencode\finanzas-chat-cuotas-final-build.log`.
+
+Seven live Gemini + emulator probes covered pending, paid this month, not paid, paused, annual paid this year, missing due dates and unavailable history. The final probes took 960–1,602 ms, produced no proposals and left every synthetic cuota/payment unchanged; the historical query asked for clarification rather than inventing a payment history. Subsequent presentation-only changes omit irrelevant zero-frequency/paused totals and pending explanations on paid-only lists. No real Firebase records, IAM, rules, indexes or production deployment were changed. Fede must still accept the deployed status answers in his browser.
