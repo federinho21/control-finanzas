@@ -36,7 +36,7 @@ export async function judgeTaskCompletion(uid: string, taskId: string): Promise<
   const apiKey = useGeminiApiKey()
   const model = new ChatGoogleGenerativeAI({
     apiKey,
-    model: 'gemini-3.6-flash',
+    model: 'gemini-3.1-flash-lite',
     temperature: 0.1
   })
 

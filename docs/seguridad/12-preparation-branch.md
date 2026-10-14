@@ -107,6 +107,22 @@ Stored the existing key directly in Netlify as secret `NUXT_GEMINI_API_KEY`, bra
 
 Rollback: remove the branch-specific Gemini secret and rebuild the preview. This does not revoke the user's original local key or undo prior Gemini usage. Gemini quota/cost and Netlify's 60-second streaming limit remain launch gates.
 
+## Chat prerequisites follow-up
+
+Fede reported the generic SSE error. Read-only reproduction identified a missing composite index BEFORE model classification: the owner/session-filtered pending-plan lookup in `detectIntent` awaited `pendingActions` outside its classifier catch block. After explicit authorization, created collection-scope index `projects/wallet-payment-tracker-fede/databases/(default)/collectionGroups/pendingActions/indexes/CICAgJim14AK` with `userId`, `sessionId`, `kind`, `state` ascending and `createdAt` descending, matching the existing index file. No rules, TTL, proposals or payment records were changed. A bounded two-minute check still reported CREATING; require READY and the successful lookup before live chat acceptance.
+
+An independent new minimal SDK request to `gemini-3.6-flash` still returned 503/high demand in 1,939 ms, without financial data. Creating the index does not resolve that provider error. No model switch has been made; any replacement must first be tested and explicitly approved.
+
+## Approved model replacement
+
+Fede authorized testing `gemini-3.5-flash`; it also returned 503, so no switch to that model was made. Fede then requested bounded tests of multiple listed Gemini models until one responded. The first additional candidate, `gemini-3.1-flash-lite`, returned `OK.` in 1,817 ms with 8 total tokens. No financial data was sent. Fede explicitly approved using it for the preview chat.
+
+Updated all eight chat-model constructors across seven agent modules (supervisor, strategy, planner, data generation/modification, knowledge, judge, retrospective) to `gemini-3.1-flash-lite`. Embeddings, keys, prompts, SSE ordering, approval semantics and existing timeouts remain unchanged; no automatic model fallback or new retry policy was added.
+
+Live synthetic acceptance used the real classifier prompt: `monthly_report` routed to `data` with confidence at least 0.8. A first classification took 10,794 ms (longer than the six-second production classifier budget); a repeat with a six-second abort deadline passed in 1,215 ms. The actual proposal generator also returned validated JSON in 1,733 ms without database writes. These results prove basic compatibility, not guaranteed latency or financial-answer quality.
+
+The pendingActions index reached READY; the exact owner/session/kind/state/createdAt lookup succeeded read-only for a dummy session. Finance isolation tests (27), compiled Netlify checks (15 routes plus initialization regressions), finance typecheck and Netlify build passed after the model replacement. Real authenticated chat, accurate financial totals in answers, and approval acceptance still require Fede's browser. The provider's variable latency and Netlify's 60-second limit remain release gates.
+
 - Source publication is confirmed; select this branch for protected staging/preview without replacing production `main`.
 - Server Firebase credentials and verified least-privilege IAM; do not paste private keys in chat.
 - Netlify variables, exact Origin and Firebase authorized domains per trusted deploy context.

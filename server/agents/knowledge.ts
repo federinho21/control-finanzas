@@ -28,7 +28,7 @@ export async function answerWithRag(uid: string, query: string) {
 
   const model = new ChatGoogleGenerativeAI({
     apiKey,
-    model: 'gemini-3.6-flash',
+    model: 'gemini-3.1-flash-lite',
     temperature: 0.2,
     maxOutputTokens: 2000,
     maxRetries: 0
