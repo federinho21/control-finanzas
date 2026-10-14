@@ -31,7 +31,9 @@ export interface AgentIntent {
   | 'list_cuotas'
   | 'mark_cuota_pagada'
   | 'delete_cuota'
-  | 'monthly_report'
+   | 'monthly_report'
+   | 'category_report'
+   | 'recent_movements'
   confidence?: number
   needsClarification?: boolean
   clarificationQuestion?: string
@@ -57,6 +59,7 @@ interface IntentClassifierOutput {
   sprintId?: string
   taskId?: string
   status?: string
+  limit?: number
 }
 
 const LIST_BACKLOG_CONFIDENCE_THRESHOLD = 0.8
@@ -198,6 +201,8 @@ function isIntentOperation(value: unknown): value is IntentOperation {
     || value === 'mark_cuota_pagada'
     || value === 'delete_cuota'
     || value === 'monthly_report'
+    || value === 'category_report'
+    || value === 'recent_movements'
 }
 
 /**
@@ -302,7 +307,7 @@ Return strict JSON only, with no markdown and no extra text.
 JSON schema:
 {
   "route": "planner|strategy|data|knowledge|retro|END",
-  "operation": "create_rock|create_sprint|delete_rock|list_backlog|approve_tasks|approve_plan|confirm_delete|rag_query|plan_tasks|generate_plan|update_sprint_status|update_task_status|generate_retrospective|query_rock|query_sprint|query_task|modify_plan|create_cuota|list_cuotas|mark_cuota_pagada|delete_cuota|monthly_report|null",
+  "operation": "create_rock|create_sprint|delete_rock|list_backlog|approve_tasks|approve_plan|confirm_delete|rag_query|plan_tasks|generate_plan|update_sprint_status|update_task_status|generate_retrospective|query_rock|query_sprint|query_task|modify_plan|create_cuota|list_cuotas|mark_cuota_pagada|delete_cuota|monthly_report|category_report|recent_movements|null",
   "confidence": 0.0,
   "needsClarification": true,
   "clarificationQuestion": "string",
@@ -310,7 +315,8 @@ JSON schema:
   "rockId": "R-XXXX",
   "sprintId": "S-XXXX",
   "taskId": "T-XXXX",
-  "status": "planned|in_progress|completed|on_hold|pending|null"
+  "status": "planned|in_progress|completed|on_hold|pending|null",
+  "limit": 5
 }
 
 ${hasPendingPlan ? `
@@ -336,6 +342,8 @@ Rules:
 - Use route data with operation "mark_cuota_pagada" when the user wants to mark a cuota as paid. Must include a cuota ID (U-XXXX).
 - Use route data with operation "delete_cuota" when the user wants to delete a cuota. Must include a cuota ID (U-XXXX).
 - Use route data with operation "monthly_report" for monthly income, expenses, withdrawals, balance or summary questions. Accept an explicit YYYY-MM or relative expressions such as "este mes", "mes pasado", "this month" and "last month"; the data agent resolves the period. Do not ask for a technical ID or route these questions to document search.
+- Use route data with operation "category_report" for expense category breakdowns, rankings, or questions about the category with the highest spending. Do not route these to document search or monthly_report. The data agent defaults to the current month if no period is specified.
+- Use route data with operation "recent_movements" to list recent movements, without requiring account/period IDs. Set limit to the requested integer (understand number words such as "cinco"); default 5. Maximum 20 per query; if the user requests more, ask them to select 1–20. If no period is specified, show recent movements across all recorded history. This route lists all movement types, not a merchant/type-specific filtered list; ask for clarification for unsupported filters, without demanding technical IDs.
 - Use route retro with generate_retrospective when user asks for a monthly analysis/review or period retrospective. Must include a Sprint ID (S-XXXX) in the message.
 - Use route "data" with operation "modify_plan" ONLY when IMPORTANT CONTEXT says a plan is pending AND the user wants to add/remove/change sprints or tasks in that plan.
 - When operation is "update_sprint_status", extract the intended status from the message if mentioned. Valid values: planned, in_progress, completed, on_hold. Set "status" to null if not mentioned.
@@ -386,6 +394,7 @@ async function classifyIntentWithGemini(message: string, hasPendingPlan: boolean
     sprintId?: unknown
     taskId?: unknown
     status?: unknown
+    limit?: unknown
   }
 
   if (!isRouteName(parsed.route)) {
@@ -395,6 +404,8 @@ async function classifyIntentWithGemini(message: string, hasPendingPlan: boolean
   const operation = parsed.operation == null
     ? defaultOperationForRoute(parsed.route)
     : (isIntentOperation(parsed.operation) ? parsed.operation : undefined)
+
+  if (parsed.limit != null && (typeof parsed.limit !== 'number' || !Number.isInteger(parsed.limit))) throw new Error('Classifier returned an invalid movement limit.')
 
   return {
     route: parsed.route,
@@ -406,7 +417,8 @@ async function classifyIntentWithGemini(message: string, hasPendingPlan: boolean
     rockId: normalizeEntityId(parsed.rockId, 'R'),
     sprintId: normalizeEntityId(parsed.sprintId, 'S'),
     taskId: normalizeEntityId(parsed.taskId as unknown, 'T'),
-    status: typeof parsed.status === 'string' && parsed.status !== 'null' ? parsed.status : undefined
+    status: typeof parsed.status === 'string' && parsed.status !== 'null' ? parsed.status : undefined,
+    limit: typeof parsed.limit === 'number' ? parsed.limit : undefined
   }
 }
 
@@ -480,7 +492,8 @@ export async function detectIntent(input: {
       rockId: classified.rockId,
       sprintId: classified.sprintId,
       taskId: classified.taskId,
-      status: classified.status
+      status: classified.status,
+      payload: classified.operation === 'recent_movements' ? { limit: classified.limit ?? 5 } : undefined
     }
   } catch {
     return buildSafeFallbackIntent(message)

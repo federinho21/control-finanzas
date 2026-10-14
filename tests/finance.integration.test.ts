@@ -11,7 +11,7 @@ import { costaRicaDate, movementInput, cuotaInput } from '../server/repositories
 import { createFinanceHandlers } from '../server/utils/finance-handlers'
 import { createAuthService, type AuthProvider } from '../server/utils/auth-service'
 import { createLegacyGate } from '../server/middleware/legacy-security'
-import { runFinanceOperation } from '../server/agents/data-agent'
+import { runDataOperation, runFinanceOperation } from '../server/agents/data-agent'
 import { startFirestoreEmulator } from './firestore-emulator'
 import { AgentRepository } from '../server/repositories/agent'
 import { DocumentRepository } from '../server/repositories/documents'
@@ -423,4 +423,49 @@ test('chat HTTP passes only cookie UID, validates input and preserves ordered SS
     assert.ok(!failed.includes('PRIVATE PROVIDER ERROR'))
     assert.deepEqual(failed.trim().split('\n\n').map(line => JSON.parse(line.slice(6)).type), ['status', 'error', 'done'])
   } finally { http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve())) }
+})
+
+test('chat category/recent queries use only the authenticated owner and never mutate source payments', async () => {
+  const previous = { project: process.env.FIREBASE_PROJECT_ID, mode: process.env.NODE_ENV }
+  process.env.FIREBASE_PROJECT_ID = 'demo-control-finanzas'
+  process.env.NODE_ENV = 'test'
+  const chatApp = initializeApp(app.options, 'control-finanzas')
+  try {
+    const timestamp = new Date(`${month}-10T18:00:00Z`).getTime()
+    for (const [id, userId, amount, direction, offset] of [
+      ['chat-expense-one', 'CHAT-A', 0.1, 'purchase', 0],
+      ['chat-expense-two', 'CHAT-A', 0.2, 'purchase', 1000],
+      ['chat-income', 'CHAT-A', 1000, 'incoming', 2000],
+      ['chat-foreign', 'CHAT-B', 999999, 'purchase', 3000]
+    ] as const) {
+      await db.collection('payments').doc(id).set({ userId, parsed: true, amount, currency: 'CRC', direction, timestamp: timestamp + offset, category: userId === 'CHAT-A' ? 'Comida QA' : 'FOREIGN CATEGORY', merchant: id })
+    }
+    const sessionId = crypto.randomUUID()
+    const before = await db.collection('payments').where('userId', 'in', ['CHAT-A', 'CHAT-B']).get()
+    const category = await runDataOperation({ uid: 'CHAT-A', sessionId, operation: 'category_report', message: `Gastos por categoría de ${month}` })
+    assert.ok(String(category.message).includes('Comida QA: ₡0.30'))
+    assert.ok(!String(category.message).includes('FOREIGN'))
+    assert.ok(!String(category.message).includes('1000.00'))
+    const recent = await runDataOperation({ uid: 'CHAT-A', sessionId, operation: 'recent_movements', message: 'Muéstrame mis últimos dos movimientos.', payload: { limit: 2, userId: 'CHAT-B' } })
+    assert.ok(String(recent.message).includes('2 de 3'))
+    assert.ok(String(recent.message).includes('chat\\-income'))
+    assert.ok(!String(recent.message).includes('chat\\-expense\\-one'))
+    assert.ok(!String(recent.message).includes('FOREIGN'))
+    assert.ok(!String(recent.message).includes('999999'))
+    const invalid = await runDataOperation({ uid: 'CHAT-A', sessionId, operation: 'recent_movements', message: 'Muéstrame mis movimientos.', payload: { limit: 100 } })
+    assert.match(String(invalid.message), /entre 1 y 20/)
+    const ambiguous = await runDataOperation({ uid: 'CHAT-A', sessionId, operation: 'category_report', message: 'Gastos por categoría de ayer' })
+    assert.match(String(ambiguous.message), /indica un único mes/)
+    const filtered = await runDataOperation({ uid: 'CHAT-A', sessionId, operation: 'recent_movements', message: 'Muéstrame mis últimos cinco gastos.' })
+    assert.match(String(filtered.message), /filtros por tipo/)
+    const incomeCategory = await runDataOperation({ uid: 'CHAT-A', sessionId, operation: 'category_report', message: 'Ingresos por categoría este mes' })
+    assert.match(String(incomeCategory.message), /solo de gastos/)
+    const after = await db.collection('payments').where('userId', 'in', ['CHAT-A', 'CHAT-B']).get()
+    assert.deepEqual(after.docs.map(row => row.data()), before.docs.map(row => row.data()))
+  } finally {
+    await getFirestore(chatApp).terminate()
+    await deleteApp(chatApp)
+    if (previous.project === undefined) delete process.env.FIREBASE_PROJECT_ID; else process.env.FIREBASE_PROJECT_ID = previous.project
+    if (previous.mode === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previous.mode
+  }
 })

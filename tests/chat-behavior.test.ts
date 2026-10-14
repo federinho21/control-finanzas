@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { buildSafeFallbackIntent } from '../server/agents/supervisor'
 import * as dataAgent from '../server/agents/data-agent'
+import type { Task } from '../shared/types/task'
 
 const { formatMonthlyReport, resolveReportMonth } = dataAgent
+const { formatCategoryReport, formatRecentMovements } = dataAgent
 
 test('classification failures never turn read requests or arbitrary text into budget proposals', () => {
   for (const message of ['Gracias', 'Muéstrame el movimiento T-BBBB.', 'Quiero registrar un gasto por almuerzo, no crear un presupuesto.', 'Quiero generar un presupuesto mensual']) {
@@ -65,4 +67,49 @@ test('a monthly total is not presented as the answer to a category breakdown', (
   const result = formatMonthlyReport(summary, '¿En qué categoría gasté más este mes?')
   assert.match(result, /todavía no responde desgloses/)
   assert.ok(!result.includes('₡300.00'))
+})
+
+function movement(id: string, overrides: Partial<Task> = {}): Task {
+  return { id, description: 'Compra de prueba', owner: 'Comida', deadline: '2026-10-13', priority: 'medium', status: 'completed', rockId: '', sprintId: '', monto: '0.10', tipo: 'gasto', createdAt: '2026-10-13T18:00:00.000Z', ...overrides }
+}
+
+test('category report ranks owned expenses using exact cents and excludes income/withdrawals', () => {
+  const items = [movement('T-AAAA'), movement('T-AAAB', { monto: '0.20' }), movement('T-AAAC', { owner: 'Transporte', monto: '0.20' }), movement('T-AAAD', { tipo: 'ingreso', monto: '9999.00' }), movement('T-AAAE', { tipo: 'retiro', monto: '500.00' })]
+  const result = formatCategoryReport({ items, excluded: 2 }, '2026-10')
+  assert.ok(result.includes('Comida: ₡0.30'))
+  assert.ok(result.includes('Transporte: ₡0.20'))
+  assert.ok(result.indexOf('Comida') < result.indexOf('Transporte'))
+  assert.match(result, /2 movimientos excluidos/)
+  assert.ok(!/9999|500\.00/.test(result))
+})
+
+test('empty reports are explicit and large category results disclose their display limit', () => {
+  assert.match(formatCategoryReport({ items: [], excluded: 0 }, '2026-09'), /no hay gastos registrados.*2026-09/)
+  const items = Array.from({ length: 21 }, (_, index) => movement(`T-${index}`, { owner: `Categoria ${index}` }))
+  assert.match(formatCategoryReport({ items, excluded: 0 }, '2026-10'), /20 de 21/)
+  assert.match(formatRecentMovements({ items: [], excluded: 1 }, 5), /no hay movimientos registrados/)
+})
+
+test('recent movements use date/time order without mutating inputs and state the actual scope/count', () => {
+  const older = movement('T-AAAA', { deadline: '2026-09-01', description: 'Movimiento antiguo' })
+  const recent = movement('T-AAAB', { description: 'Movimiento reciente', createdAt: '2026-10-13T19:00:00.000Z' })
+  const items = [older, recent, movement('T-AAAC')]
+  const result = formatRecentMovements({ items, excluded: 0 }, 2)
+  assert.ok(result.includes('2 de 3'))
+  assert.ok(result.includes('todo el historial'))
+  assert.ok(result.indexOf('Movimiento reciente') < result.indexOf('Compra de prueba'))
+  assert.ok(!result.includes('Movimiento antiguo'))
+  assert.equal(items[0], older)
+  assert.match(formatRecentMovements({ items: [recent], excluded: 0 }, 5, '2026-10'), /2026-10/)
+})
+
+test('recent movement display limits fail closed and stored text cannot inject markdown links/images', () => {
+  for (const limit of [0, -1, 21, 1.5]) assert.throws(() => formatRecentMovements({ items: [], excluded: 0 }, limit))
+  const malicious = movement('T-AAAA', { description: '![image](https://example.invalid)\nOtra línea', owner: '[link](https://example.invalid)' })
+  const result = formatRecentMovements({ items: [malicious], excluded: 0 }, 5)
+  assert.ok(!result.includes('![image]('))
+  assert.ok(!result.includes('[link]('))
+  assert.ok(!result.includes('\nOtra línea'))
+  const category = formatCategoryReport({ items: [malicious], excluded: 0 }, '2026-10')
+  assert.ok(!category.includes('[link]('))
 })

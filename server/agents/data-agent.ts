@@ -2,7 +2,7 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
 import { z } from 'zod'
 import type { FinanceCommand, FinanceRepository } from '../repositories/finance'
 import { getAgentRepository, planDraft } from '../repositories/agent'
-import { costaRicaDate, cuotaInput, FinanceError, monthInput, recordId } from '../repositories/finance-model'
+import { amountMinor, amountText, costaRicaDate, cuotaInput, FinanceError, monthInput, recordId } from '../repositories/finance-model'
 import { useGeminiApiKey } from '../composables/useGeminiApiKey'
 import type { DocumentRepository } from '../repositories/documents'
 
@@ -54,6 +54,38 @@ export function formatMonthlyReport(summary: { month: string; ingresos: number; 
     return `Fede, ${key === 'balance' ? 'tu balance' : `tus ${key}`} de ${summary.month}: ₡${summary[key].toFixed(2)}.${excluded}`
   }
   return `Fede, resumen de ${summary.month}:\n- Ingresos: ₡${summary.ingresos.toFixed(2)}\n- Gastos: ₡${summary.gastos.toFixed(2)}\n- Retiros: ₡${summary.retiros.toFixed(2)}\n- Balance: ₡${summary.balance.toFixed(2)}${excluded}`
+}
+
+type MovementRows = Awaited<ReturnType<FinanceRepository['loadMovements']>>
+
+function movementLabel(value: string) {
+  return value.replace(/\s+/g, ' ').slice(0, 200).replace(/([\\`*_{}\[\]()#+\-.!|<>~])/g, '\\$1')
+}
+
+export function formatCategoryReport(rows: MovementRows, month: string) {
+  const categories = new Map<string, number>()
+  for (const row of rows.items.filter(row => row.tipo === 'gasto')) {
+    const category = row.owner || 'Sin categoría'
+    const total = (categories.get(category) ?? 0) + amountMinor(row.monto)
+    if (!Number.isSafeInteger(total)) throw new FinanceError(422, 'El total supera la precisión admitida.')
+    categories.set(category, total)
+  }
+  const ranked = [...categories].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  const excluded = rows.excluded ? `\n${rows.excluded} movimientos excluidos por moneda distinta de CRC o datos pendientes de revisión.` : ''
+  if (!ranked.length) return `Fede, no hay gastos registrados en ${month}.${excluded}`
+  const lines = ranked.slice(0, 20).map(([category, total]) => `- ${movementLabel(category)}: ₡${amountText(total)}`)
+  return `Fede, gastos por categoría de ${month}, de mayor a menor:\n${lines.join('\n')}${ranked.length > 20 ? `\nMostrando 20 de ${ranked.length} categorías.` : ''}${excluded}`
+}
+
+export function formatRecentMovements(rows: MovementRows, limit = 5, month?: string) {
+  z.number().int().min(1).max(20).parse(limit)
+  const scope = month ? `de ${month}` : 'de todo el historial'
+  const excluded = rows.excluded ? `\n${rows.excluded} movimientos excluidos por moneda distinta de CRC o datos pendientes de revisión.` : ''
+  if (!rows.items.length) return `Fede, no hay movimientos registrados ${scope}.${excluded}`
+  const sorted = [...rows.items].sort((a, b) => b.deadline.localeCompare(a.deadline) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+  const selected = sorted.slice(0, limit)
+  const lines = selected.map(row => `- ${row.deadline} · ${row.tipo} · ₡${amountText(amountMinor(row.monto))} · ${movementLabel(row.owner || 'Sin categoría')} · ${movementLabel(row.description)}`)
+  return `Fede, últimos ${selected.length} de ${rows.items.length} movimientos registrados ${scope}:\n${lines.join('\n')}${excluded}`
 }
 
 async function explain(data: unknown, question: string) {
@@ -150,6 +182,22 @@ export async function runDataOperation(input: DataOperationInput): Promise<Recor
         return { message: `Cuota ${row.id} marked as paid.`, refreshBacklog: true }
       }
       case 'delete_cuota': await repository.deleteCuota(input.uid, recordId.parse(input.taskId ?? payload.cuotaId)); return { message: 'Cuota deleted.', refreshBacklog: true }
+      case 'category_report':
+      case 'recent_movements': {
+        const month = resolveReportMonth(input.message)
+        const text = input.message.normalize('NFD').replace(/\p{M}/gu, '')
+        const periodMentioned = /\b(mes|month|hoy|ayer|semana|week|day|year|ano|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|\d{4})\b|\d{1,4}[-/]\d{1,2}/i.test(text)
+        if (!month && periodMentioned) return { message: 'Fede, indica un único mes como YYYY-MM, «este mes» o «mes pasado».' }
+        if (input.operation === 'category_report') {
+          if (/\b(ingresos?|retiros?)\b/i.test(text)) return { message: 'Fede, el desglose por categoría disponible aquí es solo de gastos. Para ingresos o retiros puedes consultar el total mensual.' }
+          const period = month ?? costaRicaDate().slice(0, 7)
+          return { message: formatCategoryReport(await repository.loadMovements(input.uid, period), period) }
+        }
+        if (/\b(gastos?|ingresos?|retiros?|categorias?|comercios?)\b/i.test(text)) return { message: 'Fede, esta lista muestra movimientos de todos los tipos. Los filtros por tipo, categoría o comercio todavía no están disponibles en el chat; puedes revisar los registros en Mis Finanzas.' }
+        const limit = z.number().int().min(1).max(20).safeParse(payload.limit ?? 5)
+        if (!limit.success) return { message: 'Fede, puedo mostrar entre 1 y 20 movimientos recientes por consulta.' }
+        return { message: formatRecentMovements(await repository.loadMovements(input.uid, month), limit.data, month) }
+      }
       case 'monthly_report': {
         const month = typeof payload.month === 'string' ? monthInput.parse(payload.month) : resolveReportMonth(input.message)
         if (!month) return { message: 'Fede, indica un único mes como YYYY-MM, «este mes» o «mes pasado». Para un día o una comparación de períodos necesito otra consulta.' }
