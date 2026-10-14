@@ -73,6 +73,12 @@ The role and bindings were verified administratively. A read-only attempt to obt
 
 Rollback for this step: remove only the `cfFirestorePreviewRead` binding for `cf-netlify-preview`, leaving the existing session role and all unrelated principals untouched.
 
+## Financial-read runtime fix
+
+Fede reported empty movements after login. Netlify request logs showed 503 for `/api/tasks`, `/api/rocks`, `/api/sprints`, `/api/cuotas` and `/api/dashboard`, not successful empty results. A projection-only source diagnostic found all 19 owner records parsed in CRC with numeric timestamps in October 2026 (4 incoming, 6 outgoing, 7 purchases, 2 legacy-direction records); no raw notifications or amounts were printed.
+
+The bundled Firebase Admin Firestore initializer left `require('@google-cloud/firestore')` inside a try/catch in an ESM chunk. The dependency was present, but initialization threw `ReferenceError: require is not defined`, wrapped as `firestore/missing-dependencies`. A new plain-Node compiled-client regression using a generated dummy certificate reproduced the failure WITHOUT contacting Firebase. Setting Nitro `commonJS.ignoreTryCatch=false` converts that require through the bundler rather than ignoring it. The regression then passed, with the existing 15 compiled route checks, 5 Netlify compatibility tests and finance typecheck. No dependency, permission, data migration or ownership-filter change is part of this fix. Real authenticated financial HTTP reads still require verification from Fede's session after the preview rebuild.
+
 - Source publication is confirmed; select this branch for protected staging/preview without replacing production `main`.
 - Server Firebase credentials and verified least-privilege IAM; do not paste private keys in chat.
 - Netlify variables, exact Origin and Firebase authorized domains per trusted deploy context.
