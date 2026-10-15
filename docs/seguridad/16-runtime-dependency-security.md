@@ -83,3 +83,5 @@ Passed afterward: 10 dependency tests, 19 chat tests (including the narrow read-
 | esbuild 0.27.7 | Report concerns development-server arbitrary file read on Windows. Existing parents pin the 0.27 line; this app does not deploy the dev server. | Keep development server private; update compatible parents separately. |
 
 These reachability notes narrow investigation; they are not a production exception or a statement that the whole graph is safe. Verify again before release. Final build/test logs: `finanzas-final-node-build.log`, `finanzas-final-netlify-build.log`, `finanzas-final-finance-tests.log`. Frozen-install/signature evidence above belongs to the preceding editor revision, not this later four-package lockfile.
+
+The full `npm audit --json` including development dependencies reports **23 findings (0 critical, 15 high, 8 moderate)**, distinct from the production-graph count above; full-graph advisory severity can aggregate several installed versions of one package differently. Evidence: `finanzas-audit-full-final-20261014.json`. Neither report exits successfully while findings remain, and no audit exit code was converted into a passing release gate.

@@ -4,13 +4,13 @@ Work is deliberately incremental. Fede authorized the remaining modules together
 
 | Number | Scope | Status |
 | --- | --- | --- |
-| 1 | Backend authentication: Firebase Admin, secure sessions, requireUser | Implemented; local automated checks passed; real Google integration pending |
+| 1 | Backend authentication: Firebase Admin, secure sessions, requireUser | Implemented; automated checks passed; Fede accepted Google login on preview; two-user staging acceptance pending |
 | 2 | Link Android anonymous identity to Google, preserving UID | 23 unit tests and APK build passed; Fede installed the update; remote Auth confirms Google linked to the original UID; fresh capture acceptance pending |
-| 3 | Web Google login, session hydration, logout and state reset | Implemented; 13 unit + 8 browser tests passed; web typecheck now passes; live Google acceptance pending |
-| 4 | UID-scoped Firestore repositories and private finance APIs | Implemented; 19 emulator integration + 5 model tests passed; local build passed; remote acceptance pending |
-| 5 | Trusted UID through LangGraph, tools and durable approvals | Implemented; emulator and SSE tests passed; live Gemini acceptance pending |
+| 3 | Web Google login, session hydration, logout and state reset | Implemented; 13 unit + 10 browser tests passed; web typecheck passed; Fede accepted preview login; full staging acceptance pending |
+| 4 | UID-scoped Firestore repositories and private finance APIs | Implemented; 32 emulator integration + 7 model tests passed; Fede accepted preview movement/dashboard/manual-write flows; two-user acceptance pending |
+| 5 | Trusted UID through LangGraph, tools and durable approvals | Implemented; emulator/SSE tests and synthetic approval/replay checks passed; latest live classifier latency remains a blocker; explicit read-only reports bypass Gemini |
 | 6 | Private uploads, document lifecycle and isolated RAG | Implemented; owner isolation and lifecycle tests passed; real Storage/PDF/Google acceptance pending |
-| 7 | Idempotent migration, cross-user acceptance tests and hosting deployment | Migration tools implemented; hosting target changed to Netlify Functions and tested locally; remote migration/deployment NOT executed |
+| 7 | Idempotent migration, cross-user acceptance tests and hosting deployment | Migration tools implemented; Netlify preview deployed and accepted for core single-user flows; production migration/deployment NOT executed |
 
 Details and verification evidence: [Module 1](01-backend-auth.md).
 Android linking implementation and pending acceptance: [Module 2](02-android-google-link.md).
@@ -29,4 +29,4 @@ Dependency follow-up: [DevTools removal of vulnerable Git tooling and Nano ID pa
 Runtime follow-up: [HTTP/serialization/Markdown patches and frozen-install/signature verification](16-runtime-dependency-security.md).
 Manual forms: [Costa Rica dates, accessible fields and recoverable submission errors](17-manual-form-safety.md).
 
-**Release gate:** finance, chat, upload and document deletion authenticate and use UID-scoped Firestore. Reachable agent code no longer imports SQLite/D1. Android Google linking is verified; real Web login, private document-storage decision, server credentials/IAM, remote rules/indexes/TTL readiness, migration, Netlify acceptance/runtime limits and dependency remediation remain pending. Latest production dependency audit: 71 findings (1 low, 41 moderate, 27 high, 2 critical). This is NOT a production release approval.
+**Release gate:** finance, chat, upload and document deletion authenticate and use UID-scoped Firestore. Reachable agent code no longer imports SQLite/D1. Android Google linking and single-user preview login/core finances are verified. Production still requires real two-user acceptance, fresh Android capture, a private document-storage decision and PDF/RAG acceptance, production credential/rules/index/TTL review, backup/migration decisions, runtime/monitoring/rollback evidence, acceptable live Gemini latency and dependency risk closure. Preview IAM/index configuration is not production approval. Latest production-graph audit: **20 findings (0 critical, 15 high, 4 moderate, 1 low)**; full install audit including development packages: **23 (0 critical, 15 high, 8 moderate)**. See the dependency report for reachability and unpatched roots. This is NOT a production release approval.
