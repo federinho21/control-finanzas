@@ -31,7 +31,7 @@ const filteredMovements = computed(() => {
 const sectionMeta = {
   ingresos: { label: 'Ingresos', icon: 'i-lucide-trending-up' },
   gastos: { label: 'Gastos', icon: 'i-lucide-trending-down' },
-  retiros: { label: 'Retiros', icon: 'i-lucide-cash' },
+  retiros: { label: 'Retiros', icon: 'i-lucide-banknote' },
   cuotas: { label: 'Cuotas', icon: 'i-lucide-repeat' },
   periodos: { label: 'Períodos', icon: 'i-lucide-calendar-range' }
 } as const

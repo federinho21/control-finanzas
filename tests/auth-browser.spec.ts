@@ -91,6 +91,72 @@ test('missing Firebase configuration reports a generic recoverable login failure
   expect(errors).toEqual([])
 })
 
+test('financial forms use Costa Rica dates, accessible fields and retain input after rejected writes', async ({ page }, info) => {
+  await page.clock.setFixedTime(new Date('2026-10-15T02:00:00Z'))
+  await page.setViewportSize({ width: 390, height: 844 })
+  const { enter, errors } = await mockSession(page, 'A')
+  let movementAttempts = 0, cuotaAttempts = 0
+  await page.route('**/api/movimientos', async route => {
+    expect(route.request().method()).toBe('POST')
+    expect(route.request().postDataJSON()).toEqual({ fecha: '2026-10-14', tipo: 'gasto', descripcion: 'Almuerzo sintético', categoria: 'Comida QA', monto: 25 })
+    movementAttempts++
+    return movementAttempts === 1
+      ? route.fulfill({ status: 422, json: { statusMessage: 'Synthetic rejection' } })
+      : route.fulfill({ json: { id: 'T-QA01' } })
+  })
+  await page.route('**/api/cuotas', async route => {
+    if (route.request().method() !== 'POST') return route.fulfill({ json: [] })
+    expect(route.request().postDataJSON()).toEqual({ nombre: 'Cuota sintética', frecuencia: 'mensual', monto: 10, categoria: 'Prueba QA' })
+    cuotaAttempts++
+    return cuotaAttempts === 1
+      ? route.fulfill({ status: 422, json: { statusMessage: 'Synthetic rejection' } })
+      : route.fulfill({ json: { id: 'U-QA01' } })
+  })
+  await enter()
+  await page.getByRole('link', { name: 'Finanzas', exact: true }).click()
+  await expect(page.locator('form')).toHaveAttribute('method', 'post')
+  await expect(page.getByLabel('Fecha del movimiento', { exact: true })).toHaveValue('2026-10-14')
+  await expect(page.getByLabel('Tipo de movimiento', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('Cuenta del movimiento', { exact: true })).toBeVisible()
+  await page.getByLabel('Descripción del movimiento', { exact: true }).fill('Almuerzo sintético')
+  await page.getByLabel('Categoría del movimiento', { exact: true }).fill('Comida QA')
+  await page.getByLabel('Monto del movimiento en colones', { exact: true }).fill('0')
+  await page.getByRole('button', { name: 'Agregar', exact: true }).click()
+  expect(movementAttempts).toBe(0)
+  expect(await page.getByLabel('Monto del movimiento en colones', { exact: true }).evaluate((input: HTMLInputElement) => input.validity.rangeUnderflow)).toBe(true)
+  await page.getByLabel('Monto del movimiento en colones', { exact: true }).fill('25.00')
+  await page.getByRole('button', { name: 'Agregar', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('No se pudo confirmar el registro')
+  await expect(page.getByLabel('Descripción del movimiento', { exact: true })).toHaveValue('Almuerzo sintético')
+  await expect(page.getByLabel('Monto del movimiento en colones', { exact: true })).toHaveValue(/^25(?:\.00)?$/)
+  expect(movementAttempts).toBe(1)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({ path: info.outputPath('movement-form-error-mobile.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Agregar', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(page.getByLabel('Descripción del movimiento', { exact: true })).toHaveValue('')
+  expect(movementAttempts).toBe(2)
+  await page.getByRole('button', { name: 'Cuotas', exact: true }).click()
+  await expect(page.locator('form')).toHaveAttribute('method', 'post')
+  await expect(page.getByLabel('Frecuencia de la cuota', { exact: true })).toBeVisible()
+  await page.getByLabel('Nombre de la cuota', { exact: true }).fill('Cuota sintética')
+  await page.getByLabel('Monto de la cuota en colones', { exact: true }).fill('10.00')
+  await page.getByLabel('Categoría de la cuota', { exact: true }).fill('Prueba QA')
+  await page.getByRole('button', { name: 'Agregar cuota', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('No se pudo confirmar el registro')
+  await expect(page.getByLabel('Nombre de la cuota', { exact: true })).toHaveValue('Cuota sintética')
+  expect(cuotaAttempts).toBe(1)
+  await page.getByRole('button', { name: 'Agregar cuota', exact: true }).click()
+  await expect(page.getByLabel('Nombre de la cuota', { exact: true })).toHaveValue('')
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(cuotaAttempts).toBe(2)
+  for (const width of [320, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  }
+  expect(errors.filter(error => !error.includes('Failed to load resource') || !error.includes('422'))).toEqual([])
+})
+
 test('cookie recheck, ordered SSE and logout clear user chat on desktop', async ({ page }) => {
   const { state, errors, enter } = await mockSession(page, 'A')
   await enter()
