@@ -26,5 +26,6 @@ Authorized source-publication checkpoint: [preparation branch and verified Netli
 Chat answer quality and first corrective slice: [FAQ evaluation and safe monthly totals](13-chat-answer-quality.md).
 Conversational registration: [UID/session-bound movement confirmation, cancellation and replay](14-conversational-movements.md).
 Dependency follow-up: [DevTools removal of vulnerable Git tooling and Nano ID patches](15-devtools-nanoid-security.md).
+Runtime follow-up: [HTTP/serialization/Markdown patches and frozen-install/signature verification](16-runtime-dependency-security.md).
 
 **Release gate:** finance, chat, upload and document deletion authenticate and use UID-scoped Firestore. Reachable agent code no longer imports SQLite/D1. Android Google linking is verified; real Web login, private document-storage decision, server credentials/IAM, remote rules/indexes/TTL readiness, migration, Netlify acceptance/runtime limits and dependency remediation remain pending. Latest production dependency audit: 71 findings (1 low, 41 moderate, 27 high, 2 critical). This is NOT a production release approval.
