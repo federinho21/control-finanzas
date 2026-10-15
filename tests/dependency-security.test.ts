@@ -2,9 +2,21 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { ssrRenderAttrs } from '@vue/server-renderer'
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 
 const require = createRequire(import.meta.url)
 const editorQuote = createRequire(require.resolve('launch-editor'))('shell-quote')
+
+test('the lockfile excludes vulnerable Git tooling and Nano ID versions', () => {
+  const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'))
+  for (const [path, entry] of Object.entries(lock.packages) as [string, { version: string }][]) {
+    assert.ok(!/node_modules\/(simple-git|@simple-git\/argv-parser)$/.test(path), `Unused Git tooling remains: ${path}`)
+    if (/node_modules\/nanoid$/.test(path)) {
+      const [major, minor, patch] = entry.version.split('.').map(Number)
+      assert.ok(major === 3 && (minor! > 3 || minor === 3 && patch! >= 18) || major === 5 && (minor! > 1 || minor === 1 && patch! >= 16), `Unreviewed Nano ID version: ${entry.version}`)
+    }
+  }
+})
 
 test('Vue SSR rejects carriage-return attribute names instead of injecting event handlers', () => {
   const output = ssrRenderAttrs({ 'x\rautofocus\ronfocus': 'alert(document.cookie)', title: 'Safe attribute' })
