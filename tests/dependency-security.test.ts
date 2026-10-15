@@ -5,6 +5,7 @@ import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
 import { parse, stringify } from 'devalue'
 import MarkdownIt from 'markdown-it'
+import { mergeAttributes } from '@tiptap/core'
 
 const require = createRequire(import.meta.url)
 const editorQuote = createRequire(require.resolve('launch-editor'))('shell-quote')
@@ -35,10 +36,41 @@ test('runtime and build lockfile entries contain the reviewed security patches',
   for (const [path, entry] of Object.entries(lock.packages) as [string, { version: string }][]) {
     for (const [name, range] of Object.entries({
       undici: '^8.10.2', devalue: '^5.9.3', 'markdown-it': '^14.3.0', 'linkify-it': '^5.0.2',
-      'source-map-js': '^1.2.2', svgo: '^4.1.0', 'prosemirror-view': '^1.42.3', 'brace-expansion': '^2.1.7 || ^5.0.12'
+      'source-map-js': '^1.2.2', svgo: '^4.1.0', 'prosemirror-view': '^1.42.3', 'brace-expansion': '^2.1.7 || ^5.0.12',
+      seroval: '^1.6.3', langsmith: '>=0.6.0 <1.0.0', '@tiptap/core': '^3.30.5'
     })) {
       if (path.endsWith(`node_modules/${name}`)) assert.ok(satisfies(entry.version, range), `${path}: ${entry.version}`)
     }
+  }
+})
+
+test('the UI editor dependency cannot inherit executable attributes through an own prototype key', () => {
+  const attrs = mergeAttributes(JSON.parse('{"__proto__":{"onclick":"untrusted"},"title":"Safe"}'))
+  assert.equal(attrs.onclick, undefined)
+  assert.equal(attrs.title, 'Safe')
+  assert.equal(Object.getPrototypeOf(attrs), Object.prototype)
+})
+
+test('the installed agent provider still invokes Gemini through the patched tracing dependency', async () => {
+  const { ChatGoogleGenerativeAI } = await import('@langchain/google-genai')
+  const originalFetch = globalThis.fetch
+  let requests = 0
+  globalThis.fetch = async (input, options) => {
+    const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+    assert.equal(url.hostname, 'generativelanguage.googleapis.com')
+    assert.match(url.pathname, /gemini-3\.1-flash-lite:generateContent$/)
+    const body = JSON.parse(String(options?.body))
+    assert.equal(body.generationConfig.maxOutputTokens, 30)
+    requests++
+    return new Response(JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: 'READY' }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 } }), { headers: { 'content-type': 'application/json' } })
+  }
+  try {
+    const model = new ChatGoogleGenerativeAI({ apiKey: 'synthetic-no-network-key', model: 'gemini-3.1-flash-lite', temperature: 0, maxRetries: 0, maxOutputTokens: 30 })
+    const result = await model.invoke('Synthetic connectivity check. Reply only READY.', { signal: AbortSignal.timeout(6000) })
+    assert.equal(result.content, 'READY')
+    assert.equal(requests, 1)
+  } finally {
+    globalThis.fetch = originalFetch
   }
 })
 
