@@ -37,7 +37,8 @@ test('runtime and build lockfile entries contain the reviewed security patches',
     for (const [name, range] of Object.entries({
       undici: '^8.10.2', devalue: '^5.9.3', 'markdown-it': '^14.3.0', 'linkify-it': '^5.0.2',
       'source-map-js': '^1.2.2', svgo: '^4.1.0', 'prosemirror-view': '^1.42.3', 'brace-expansion': '^2.1.7 || ^5.0.12',
-      seroval: '^1.6.3', langsmith: '>=0.6.0 <1.0.0', '@tiptap/core': '^3.30.5'
+      seroval: '^1.6.3', langsmith: '>=0.6.0 <1.0.0', '@tiptap/core': '^3.30.5',
+      'fast-copy': '^4.1.0', 'postcss-selector-parser': '^7.1.6'
     })) {
       if (path.endsWith(`node_modules/${name}`)) assert.ok(satisfies(entry.version, range), `${path}: ${entry.version}`)
     }
