@@ -11,11 +11,11 @@ const editorQuote = createRequire(require.resolve('launch-editor'))('shell-quote
 
 test('the lockfile excludes vulnerable Git tooling and Nano ID versions', () => {
   const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'))
+  const satisfies = require('semver').satisfies as (version: string, range: string) => boolean
   for (const [path, entry] of Object.entries(lock.packages) as [string, { version: string }][]) {
     assert.ok(!/node_modules\/(simple-git|@simple-git\/argv-parser)$/.test(path), `Unused Git tooling remains: ${path}`)
     if (/node_modules\/nanoid$/.test(path)) {
-      const [major, minor, patch] = entry.version.split('.').map(Number)
-      assert.ok(major === 3 && (minor! > 3 || minor === 3 && patch! >= 18) || major === 5 && (minor! > 1 || minor === 1 && patch! >= 16), `Unreviewed Nano ID version: ${entry.version}`)
+      assert.ok(satisfies(entry.version, '^3.3.18 || ^5.1.16'), `Unreviewed Nano ID version: ${entry.version}`)
     }
   }
 })
@@ -29,11 +29,14 @@ test('Nuxt buffer serialization does not expose unrelated pooled bytes', () => {
   assert.equal(restored.buffer.byteLength, 3)
 })
 
-test('HTTP and markdown lockfile entries contain the reviewed security patches', () => {
+test('runtime and build lockfile entries contain the reviewed security patches', () => {
   const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'))
   const satisfies = require('semver').satisfies as (version: string, range: string) => boolean
   for (const [path, entry] of Object.entries(lock.packages) as [string, { version: string }][]) {
-    for (const [name, range] of Object.entries({ undici: '^8.10.2', devalue: '^5.9.3', 'markdown-it': '^14.3.0', 'linkify-it': '^5.0.2' })) {
+    for (const [name, range] of Object.entries({
+      undici: '^8.10.2', devalue: '^5.9.3', 'markdown-it': '^14.3.0', 'linkify-it': '^5.0.2',
+      'source-map-js': '^1.2.2', svgo: '^4.1.0', 'prosemirror-view': '^1.42.3', 'brace-expansion': '^2.1.7 || ^5.0.12'
+    })) {
       if (path.endsWith(`node_modules/${name}`)) assert.ok(satisfies(entry.version, range), `${path}: ${entry.version}`)
     }
   }
