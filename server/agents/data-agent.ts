@@ -2,7 +2,7 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
 import { z } from 'zod'
 import type { FinanceCommand, FinanceRepository } from '../repositories/finance'
 import { getAgentRepository, planDraft } from '../repositories/agent'
-import { amountMinor, amountText, costaRicaDate, cuotaInput, dateInput, FinanceError, monthInput, recordId } from '../repositories/finance-model'
+import { amountMinor, amountText, costaRicaDate, cuotaInput, dateInput, FinanceError, monthInput, movementDraft, recordId, usesUnsupportedMovementCurrency } from '../repositories/finance-model'
 import type { Cuota } from '../../shared/types/cuota'
 import { useGeminiApiKey } from '../composables/useGeminiApiKey'
 import type { DocumentRepository } from '../repositories/documents'
@@ -150,6 +150,27 @@ export async function runDataOperation(input: DataOperationInput): Promise<Recor
   const pieces = input.message.split('|').map(value => value.trim())
   try {
     switch (input.operation) {
+      case 'propose_movement': {
+        if (usesUnsupportedMovementCurrency(input.message)) return { message: 'Fede, el registro por chat admite solo colones CRC. Confirma la moneda y el importe antes de preparar el movimiento.' }
+        const draft = movementDraft.parse(payload)
+        const actionId = crypto.randomUUID()
+        await repository.saveAction(input.uid, input.sessionId, actionId, 'movement', draft)
+        return {
+          message: `Fede, revisa este movimiento antes de registrarlo:\n- Tipo: ${draft.tipo}\n- Importe: ₡${draft.monto} CRC\n- Descripción: ${movementLabel(draft.descripcion)}\n- Categoría: ${movementLabel(draft.categoria)}\n- Fecha: ${draft.fecha}\nAún no se ha registrado. Confirma solo si todos los datos son correctos; puedes cancelar y pedir otro borrador.`,
+          actionRequest: { type: 'approve_movement', actionId, prompt: 'Revisa y confirma el movimiento.' }
+        }
+      }
+      case 'approve_movement':
+      case 'cancel_movement': {
+        if (Object.keys(payload).length) throw new FinanceError(400, 'No se pueden modificar los datos al confirmar. Cancela y prepara otro borrador.')
+        const actionId = z.string().uuid().parse(input.actionId)
+        if (input.operation === 'cancel_movement') {
+          await repository.cancelAction(input.uid, input.sessionId, actionId, 'movement')
+          return { message: 'Fede, propuesta cancelada. No se registró ningún movimiento.', resolvedActionId: actionId }
+        }
+        const result = await repository.approveMovement(input.uid, input.sessionId, actionId)
+        return { message: `Fede, movimiento registrado: ${result.id}.`, refreshBacklog: true, resolvedActionId: actionId }
+      }
       case 'cancel_plan':
       case 'cancel_tasks': {
         await repository.cancelAction(input.uid, input.sessionId, z.string().uuid().parse(input.actionId), input.operation === 'cancel_plan' ? 'plan' : 'tasks')

@@ -103,6 +103,9 @@ export function useChat() {
       for (const event of parsed.events) {
         if (version !== auth.version()) throw new SessionChangedError()
         if (event.type === 'result') {
+          if (typeof event.resolvedActionId === 'string') {
+            for (const message of messages.value) message.actions = message.actions?.filter(action => action.actionId !== event.resolvedActionId)
+          }
           const chatMessage: ChatMessage = {
             id: nanoid(),
             role: 'assistant',
@@ -122,7 +125,7 @@ export function useChat() {
 
           const actionRequest = event.actionRequest as
             | {
-                type: 'approve_tasks' | 'confirm_delete' | 'approve_plan' | 'update_sprint_status' | 'update_task_status'
+                type: 'approve_tasks' | 'confirm_delete' | 'approve_plan' | 'update_sprint_status' | 'update_task_status' | 'approve_movement'
                 actionId: string
                 prompt: string
                 entityId?: string
@@ -138,7 +141,12 @@ export function useChat() {
               await navigateTo('/preview')
             } else {
               const actions =
-                actionRequest.type === 'approve_tasks'
+                actionRequest.type === 'approve_movement'
+                ? [
+                    { type: 'approve_movement' as const, actionId: actionRequest.actionId, label: 'Confirmar movimiento', color: 'success' as const },
+                    { type: 'cancel_movement' as const, actionId: actionRequest.actionId, label: 'Cancelar movimiento', color: 'neutral' as const }
+                  ]
+                : actionRequest.type === 'approve_tasks'
                 ? [
                     {
                       type: 'approve_tasks' as const,
@@ -264,7 +272,7 @@ export function useChat() {
 
   // Submits a pending UI action back to the assistant workflow.
   async function submitAction(action: {
-    type: 'approve_tasks' | 'confirm_delete' | 'approve_plan' | 'cancel_plan' | 'cancel_tasks' | 'update_sprint_status' | 'update_task_status'
+    type: 'approve_tasks' | 'confirm_delete' | 'approve_plan' | 'cancel_plan' | 'cancel_tasks' | 'update_sprint_status' | 'update_task_status' | 'approve_movement' | 'cancel_movement'
     actionId: string
     payload?: Record<string, unknown>
   }, editedTasks?: ProposedTask[], editedPlan?: ProposedPlan) {

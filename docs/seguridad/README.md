@@ -24,5 +24,6 @@ Real Firebase inspection and local setup: [project readiness and Android linking
 Selected hosting: [Netlify Functions + Firebase Auth/Firestore](11-netlify-hosting.md), superseding App Hosting. Blaze is not required for this hosting choice; document storage is still a separate unresolved requirement.
 Authorized source-publication checkpoint: [preparation branch and verified Netlify connection](12-preparation-branch.md). `main` is not the publication target.
 Chat answer quality and first corrective slice: [FAQ evaluation and safe monthly totals](13-chat-answer-quality.md).
+Conversational registration: [UID/session-bound movement confirmation, cancellation and replay](14-conversational-movements.md).
 
 **Release gate:** finance, chat, upload and document deletion authenticate and use UID-scoped Firestore. Reachable agent code no longer imports SQLite/D1. Android Google linking is verified; real Web login, private document-storage decision, server credentials/IAM, remote rules/indexes/TTL readiness, migration, Netlify acceptance/runtime limits and dependency remediation remain pending. Latest production dependency audit: 71 findings (1 low, 41 moderate, 27 high, 2 critical). This is NOT a production release approval.

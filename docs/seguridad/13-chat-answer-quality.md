@@ -26,7 +26,7 @@ Also passed: 27 emulator integration tests, finance typecheck, Netlify build and
 
 ## Remaining capabilities
 
-Balance-aware spending guidance, conversational registration with confirmation, consistent Spanish for all other paths, and follow-up conversation context remain separate slices. Complete cuota history and due-date scheduling are not implemented by the current status report. Dependency security, real two-user acceptance, PDFs/Storage and runtime limits remain production launch gates.
+Balance-aware spending guidance, consistent Spanish for all other paths, and follow-up conversation context remain separate slices. Conversational registration with confirmation is covered in [the dedicated approval contract](14-conversational-movements.md). Complete cuota history and due-date scheduling are not implemented by the current status report. Dependency security, real two-user acceptance, PDFs/Storage and runtime limits remain production launch gates.
 
 ## Second corrective slice — categories and recent movements
 

@@ -6,7 +6,7 @@ import { requireAuthOrigin, requireUser } from '../utils/auth'
 import { readLimitedJson } from '../utils/request-input'
 import { FinanceError } from '../repositories/finance-model'
 
-const inputSchema = z.object({ sessionId: actionSession, message: z.string().trim().min(1).max(8000), action: z.object({ type: z.enum(['approve_tasks', 'approve_plan', 'cancel_plan', 'cancel_tasks', 'confirm_delete', 'update_task_status', 'update_sprint_status', 'generate_retrospective']), actionId: z.string().uuid().optional(), payload: z.record(z.string(), z.unknown()).optional() }).strict().optional() }).strict().refine(input => !input.action || ['update_sprint_status', 'generate_retrospective'].includes(input.action.type) || !!input.action.actionId, 'Approval ID required.')
+const inputSchema = z.object({ sessionId: actionSession, message: z.string().trim().min(1).max(8000), action: z.object({ type: z.enum(['approve_tasks', 'approve_plan', 'cancel_plan', 'cancel_tasks', 'confirm_delete', 'update_task_status', 'update_sprint_status', 'generate_retrospective', 'approve_movement', 'cancel_movement']), actionId: z.string().uuid().optional(), payload: z.record(z.string(), z.unknown()).optional() }).strict().optional() }).strict().refine(input => !input.action || ['update_sprint_status', 'generate_retrospective'].includes(input.action.type) || !!input.action.actionId, 'Approval ID required.').refine(input => !input.action || !['approve_movement', 'cancel_movement'].includes(input.action.type) || !Object.keys(input.action.payload ?? {}).length, 'Movement approvals cannot contain overrides.')
 
 export function createChatHandler(dependencies: {
   user: typeof requireUser; origin: typeof requireAuthOrigin

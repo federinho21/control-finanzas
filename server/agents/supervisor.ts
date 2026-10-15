@@ -2,6 +2,7 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
 import { useGeminiApiKey } from '~~/server/composables/useGeminiApiKey'
 import { findPendingPlanBySessionId } from './state-store'
 import { logger } from '~~/server/utils/logger'
+import { costaRicaDate, movementDraft, usesUnsupportedMovementCurrency } from '../repositories/finance-model'
 
 export type RouteName = 'planner' | 'strategy' | 'data' | 'knowledge' | 'retro' | 'END'
 
@@ -34,6 +35,9 @@ export interface AgentIntent {
    | 'monthly_report'
    | 'category_report'
    | 'recent_movements'
+   | 'propose_movement'
+   | 'approve_movement'
+   | 'cancel_movement'
   confidence?: number
   needsClarification?: boolean
   clarificationQuestion?: string
@@ -60,6 +64,7 @@ interface IntentClassifierOutput {
   taskId?: string
   status?: string
   limit?: number
+  movement?: Record<string, unknown>
 }
 
 const LIST_BACKLOG_CONFIDENCE_THRESHOLD = 0.8
@@ -74,6 +79,7 @@ function resolveDeterministicActionIntent(input: {
   action?: { type: string; actionId?: string; payload?: Record<string, unknown> }
 }): AgentIntent | null {
   if (input.action?.type === 'cancel_plan' || input.action?.type === 'cancel_tasks') return { route: 'data', operation: input.action.type, actionId: input.action.actionId, confidence: 1 }
+  if (input.action?.type === 'approve_movement' || input.action?.type === 'cancel_movement') return { route: 'data', operation: input.action.type, actionId: input.action.actionId, payload: input.action.payload, confidence: 1 }
   if (input.action?.type === 'approve_tasks') {
     return {
       route: 'data',
@@ -203,6 +209,7 @@ function isIntentOperation(value: unknown): value is IntentOperation {
     || value === 'monthly_report'
     || value === 'category_report'
     || value === 'recent_movements'
+    || value === 'propose_movement'
 }
 
 /**
@@ -279,13 +286,13 @@ function buildClarificationQuestion(_message: string): string {
  * @param message - The user input message
  * @returns A safe fallback AgentIntent
  */
-export function buildSafeFallbackIntent(message: string): AgentIntent {
+export function buildSafeFallbackIntent(message: string, temporarilyUnavailable = false): AgentIntent {
   return {
     route: 'END',
     confidence: 0,
     explicitBacklogRequest: false,
     needsClarification: true,
-    clarificationQuestion: buildClarificationQuestion(message)
+    clarificationQuestion: temporarilyUnavailable ? 'Fede, el servicio de IA tardó demasiado o está temporalmente no disponible. No realicé cambios financieros en esta solicitud. Puedes volver a enviarla.' : buildClarificationQuestion(message)
   }
 }
 
@@ -301,13 +308,14 @@ The user is named Fede. Always address them as Fede.
 
 You are an intent router for a personal finance assistant.
 Decide the best flow for the user message.
+Today's date in Costa Rica: ${costaRicaDate()}.
 
 Return strict JSON only, with no markdown and no extra text.
 
 JSON schema:
 {
   "route": "planner|strategy|data|knowledge|retro|END",
-  "operation": "create_rock|create_sprint|delete_rock|list_backlog|approve_tasks|approve_plan|confirm_delete|rag_query|plan_tasks|generate_plan|update_sprint_status|update_task_status|generate_retrospective|query_rock|query_sprint|query_task|modify_plan|create_cuota|list_cuotas|mark_cuota_pagada|delete_cuota|monthly_report|category_report|recent_movements|null",
+  "operation": "create_rock|create_sprint|delete_rock|list_backlog|approve_tasks|approve_plan|confirm_delete|rag_query|plan_tasks|generate_plan|update_sprint_status|update_task_status|generate_retrospective|query_rock|query_sprint|query_task|modify_plan|create_cuota|list_cuotas|mark_cuota_pagada|delete_cuota|monthly_report|category_report|recent_movements|propose_movement|null",
   "confidence": 0.0,
   "needsClarification": true,
   "clarificationQuestion": "string",
@@ -316,7 +324,8 @@ JSON schema:
   "sprintId": "S-XXXX",
   "taskId": "T-XXXX",
   "status": "planned|in_progress|completed|on_hold|pending|null",
-  "limit": 5
+  "limit": 5,
+  "movement": null
 }
 
 ${hasPendingPlan ? `
@@ -327,6 +336,7 @@ use route "data" with operation "modify_plan".
 
 Rules:
 - Do not choose list_backlog unless the user explicitly asks to list/show/see current backlog items.
+- For an explicit request to register ONE real expense, income or withdrawal, use route data and propose_movement, never a full budget. Extract movement as {"fecha":"YYYY-MM-DD","tipo":"gasto|ingreso|retiro","descripcion":"string","categoria":"string","monto":"major-unit decimal string","currency":"CRC"}. Use the Costa Rica date above for "hoy" or when the user omits the date; resolve explicit past dates accurately. Do not invent amounts, descriptions or categories: ask a Spanish clarification when required details are unclear. Only CRC is supported; ask for clarification for USD, dollars, euros, ambiguous currencies or future movements. Do not include user/account/period IDs or approval flags. This only prepares a draft; the user must confirm using the UI before any movement is written. For all other operations, movement must be null.
 - Use route strategy with generate_plan for any free-form budgeting or planning request (monthly budget, savings goal, financial plan) that does NOT contain explicit Account IDs (R-XXXX) or Period IDs (S-XXXX).
 - Use route planner with plan_tasks ONLY when the user asks to break work into tasks AND provides explicit R-XXXX and S-XXXX identifiers.
 - If the message looks like a budgeting goal but has no IDs, always prefer strategy over planner.
@@ -367,15 +377,12 @@ async function classifyIntentWithGemini(message: string, hasPendingPlan: boolean
   const model = new ChatGoogleGenerativeAI({
     apiKey,
     model: 'gemini-3.1-flash-lite',
-    temperature: 0
+    temperature: 0,
+    maxRetries: 0,
+    maxOutputTokens: 1000
   })
 
-  const invocation = model.invoke(buildClassifierPrompt(message, hasPendingPlan))
-  const timeout = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error('Intent classification timed out.')), CLASSIFIER_TIMEOUT_MS)
-  })
-
-  const response = await Promise.race([invocation, timeout])
+  const response = await model.invoke(buildClassifierPrompt(message, hasPendingPlan), { signal: AbortSignal.timeout(CLASSIFIER_TIMEOUT_MS) })
   const content = String(response.content)
   const jsonText = extractJson(content)
 
@@ -395,6 +402,7 @@ async function classifyIntentWithGemini(message: string, hasPendingPlan: boolean
     taskId?: unknown
     status?: unknown
     limit?: unknown
+    movement?: unknown
   }
 
   if (!isRouteName(parsed.route)) {
@@ -406,6 +414,8 @@ async function classifyIntentWithGemini(message: string, hasPendingPlan: boolean
     : (isIntentOperation(parsed.operation) ? parsed.operation : undefined)
 
   if (parsed.limit != null && (typeof parsed.limit !== 'number' || !Number.isInteger(parsed.limit))) throw new Error('Classifier returned an invalid movement limit.')
+  if (operation === 'propose_movement' && parsed.route !== 'data') throw new Error('Movement drafts require the data route.')
+  const movement = operation === 'propose_movement' && !parsed.needsClarification ? movementDraft.parse(parsed.movement) : undefined
 
   return {
     route: parsed.route,
@@ -418,7 +428,8 @@ async function classifyIntentWithGemini(message: string, hasPendingPlan: boolean
     sprintId: normalizeEntityId(parsed.sprintId, 'S'),
     taskId: normalizeEntityId(parsed.taskId as unknown, 'T'),
     status: typeof parsed.status === 'string' && parsed.status !== 'null' ? parsed.status : undefined,
-    limit: typeof parsed.limit === 'number' ? parsed.limit : undefined
+    limit: typeof parsed.limit === 'number' ? parsed.limit : undefined,
+    movement
   }
 }
 
@@ -439,6 +450,10 @@ export async function detectIntent(input: {
     const resolved = deterministicIntent
     logger.debug('Supervisor', `Deterministic bypass → op="${resolved.operation}"`)
     return deterministicIntent
+  }
+
+  if (/\b(registra|registrar|anota|anotar|agrega|agregar|guarda|guardar)\b/i.test(message) && /\b(gastos?|ingresos?|retiros?|movimientos?)\b/i.test(message) && usesUnsupportedMovementCurrency(message)) {
+    return { route: 'END', needsClarification: true, confidence: 1, clarificationQuestion: 'Fede, el registro por chat admite solo colones CRC. Confirma la moneda y el importe antes de preparar el movimiento.' }
   }
 
   const pendingPlanEntry = await findPendingPlanBySessionId(input.uid, input.sessionId)
@@ -493,9 +508,12 @@ export async function detectIntent(input: {
       sprintId: classified.sprintId,
       taskId: classified.taskId,
       status: classified.status,
-      payload: classified.operation === 'recent_movements' ? { limit: classified.limit ?? 5 } : undefined
+      payload: classified.operation === 'recent_movements' ? { limit: classified.limit ?? 5 } : classified.operation === 'propose_movement' ? classified.movement : undefined
     }
-  } catch {
-    return buildSafeFallbackIntent(message)
+  } catch (error) {
+    const kind = error instanceof Error && ['AbortError', 'TimeoutError', 'ZodError', 'SyntaxError', 'Error', 'GoogleGenerativeAIFetchError'].includes(error.name) ? error.name : 'UnknownError'
+    const status = error && typeof error === 'object' && 'status' in error && typeof error.status === 'number' && error.status >= 100 && error.status <= 599 ? error.status : undefined
+    logger.warn('Supervisor', 'Intent classification failed; requesting clarification.', { kind, status })
+    return buildSafeFallbackIntent(message, ['AbortError', 'TimeoutError'].includes(kind) || status === 429 || (status ?? 0) >= 500)
   }
 }

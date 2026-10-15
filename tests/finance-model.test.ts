@@ -56,3 +56,8 @@ test('chat movement drafts preserve major currency units across validation and f
     assert.equal(financeModel.movementDraft.safeParse({ ...draft, ...extra }).success, false)
   }
 })
+
+test('unsupported movement currency wording is recognized without treating colones as dollars', () => {
+  for (const message of ['25 dólares', '1 dólar', '25 USD', '$25', '25 dollars', '25 euros']) assert.equal(financeModel.usesUnsupportedMovementCurrency(message), true)
+  for (const message of ['25 colones CRC', '₡25', '25 por almuerzo en Comida']) assert.equal(financeModel.usesUnsupportedMovementCurrency(message), false)
+})

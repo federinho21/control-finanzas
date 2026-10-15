@@ -5,7 +5,7 @@ import { before, after, test } from 'node:test'
 import { stat } from 'node:fs/promises'
 import { createApp, createRouter, eventHandler, toNodeListener } from 'h3'
 import { cert, deleteApp, initializeApp } from 'firebase-admin/app'
-import { getFirestore, type Firestore } from 'firebase-admin/firestore'
+import { getFirestore, type Firestore, type Transaction } from 'firebase-admin/firestore'
 import { FinanceRepository } from '../server/repositories/finance'
 import { costaRicaDate, movementInput, cuotaInput } from '../server/repositories/finance-model'
 import { createFinanceHandlers } from '../server/utils/finance-handlers'
@@ -530,4 +530,55 @@ test('canceled, expired or corrupt movement approvals cannot write or consume pe
   await db.doc(`users/${uid}/pendingActions/${corrupt}`).update({ payload: draft })
   const result = await repo.approveMovement(uid, session, corrupt)
   assert.equal((await db.doc(`users/${uid}/payments/${result.id}`).get()).data()?.monto, '0.10')
+})
+
+test('movement HTTP actions require an action ID, reject overrides and preserve one terminal SSE done', async () => {
+  const auth = createAuthService({ production: true, origin: () => origin, provider: async () => provider })
+  let calls = 0
+  const handler = createChatHandler({ user: auth.requireUser, origin: auth.requireOrigin, quota: async () => {}, graph: async input => {
+    calls++
+    assert.equal(input.uid, 'A')
+    assert.ok(['approve_movement', 'cancel_movement'].includes(input.action!.type))
+    assert.equal(input.action?.payload, undefined)
+    input.onEvent?.({ type: 'result', data: { message: 'Confirmed' } })
+    return { judgeWarning: null, guardrailError: null }
+  } })
+  const http = createServer(toNodeListener(createApp({ debug: false }).use(handler)))
+  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve))
+  const endpoint = `http://127.0.0.1:${(http.address() as { port: number }).port}`
+  const actionId = crypto.randomUUID(), sessionId = crypto.randomUUID()
+  const send = (action: unknown, requestOrigin = origin) => fetch(endpoint, { method: 'POST', headers: { cookie: '__Host-finanzas-session=A', origin: requestOrigin, 'content-type': 'application/json' }, body: JSON.stringify({ sessionId, message: 'Approval action', action }) })
+  try {
+    for (const type of ['approve_movement', 'cancel_movement']) {
+      const response = await send({ type, actionId })
+      assert.equal(response.status, 200)
+      const events = (await response.text()).trim().split('\n\n').map(line => JSON.parse(line.slice(6)).type)
+      assert.deepEqual(events, ['result', 'done'])
+      assert.equal((await send({ type })).status, 400)
+      assert.equal((await send({ type, actionId, payload: { monto: '9999', userId: 'B' } })).status, 400)
+    }
+    assert.equal((await send({ type: 'approve_movement', actionId: '../bad' })).status, 400)
+    assert.equal((await send({ type: 'approve_movement', actionId }, 'https://attacker.invalid')).status, 403)
+    assert.equal(calls, 2)
+  } finally {
+    http.closeAllConnections()
+    await new Promise<void>(resolve => http.close(() => resolve()))
+  }
+})
+
+test('a failure after queuing a movement rolls back anchors, payment and approval consumption together', async () => {
+  class FailingRepository extends AgentRepository {
+    protected override async createMovementInTransaction(tx: Transaction, uid: string, input: Parameters<FinanceRepository['createMovement']>[1]): Promise<never> {
+      await super.createMovementInTransaction(tx, uid, input)
+      throw new Error('Simulated failure before commit')
+    }
+  }
+  const uid = 'MOV-ROLLBACK', sessionId = crypto.randomUUID(), actionId = crypto.randomUUID()
+  const failing = new FailingRepository(db)
+  await failing.saveAction(uid, sessionId, actionId, 'movement', { fecha: costaRicaDate(), tipo: 'gasto', descripcion: 'Prueba', categoria: 'Prueba', monto: '1.00', currency: 'CRC' })
+  await assert.rejects(() => failing.approveMovement(uid, sessionId, actionId), /Simulated failure/)
+  for (const collection of ['rocks', 'sprints', 'payments', 'periodKeys', 'internal']) assert.equal((await db.collection(`users/${uid}/${collection}`).get()).size, 0)
+  assert.equal((await db.doc(`users/${uid}/pendingActions/${actionId}`).get()).data()?.state, 'pending')
+  const result = await new AgentRepository(db).approveMovement(uid, sessionId, actionId)
+  assert.equal((await db.doc(`users/${uid}/payments/${result.id}`).get()).data()?.monto, '1.00')
 })

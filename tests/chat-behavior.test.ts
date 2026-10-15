@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildSafeFallbackIntent } from '../server/agents/supervisor'
+import { buildSafeFallbackIntent, detectIntent } from '../server/agents/supervisor'
 import * as dataAgent from '../server/agents/data-agent'
 import type { Task } from '../shared/types/task'
 import type { Cuota } from '../shared/types/cuota'
@@ -18,6 +18,22 @@ test('classification failures never turn read requests or arbitrary text into bu
     assert.match(intent.clarificationQuestion!, /Fede/)
     assert.ok(!/R-XXXX|S-XXXX|backlog/.test(intent.clarificationQuestion!))
   }
+})
+
+test('an unavailable classifier reports a temporary service problem without implying an attempted financial write', () => {
+  const intent = buildSafeFallbackIntent('Registra un gasto de 25 colones por almuerzo.', true)
+  assert.equal(intent.route, 'END')
+  assert.equal(intent.operation, undefined)
+  assert.match(intent.clarificationQuestion!, /temporalmente/)
+  assert.match(intent.clarificationQuestion!, /No realicé cambios financieros/)
+})
+
+test('foreign-currency registration is clarified before any model or database access', async () => {
+  const intent = await detectIntent({ uid: 'A', sessionId: crypto.randomUUID(), message: 'Registra un gasto de 25 dólares por almuerzo en Comida hoy.' })
+  assert.equal(intent.route, 'END')
+  assert.equal(intent.needsClarification, true)
+  assert.match(intent.clarificationQuestion!, /solo colones CRC/)
+  assert.equal(intent.payload, undefined)
 })
 
 test('relative report months use the Costa Rica date and handle previous January correctly', () => {

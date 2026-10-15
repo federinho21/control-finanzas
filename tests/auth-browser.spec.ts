@@ -182,3 +182,56 @@ test('mobile navigation exposes a working accessible logout control', async ({ p
   await expect(page.getByRole('heading', { name: 'Control Finanzas' })).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('movement confirmation buttons submit only the bound action and preserve the chat session', async ({ page }, info) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const { enter, errors } = await mockSession(page, 'A')
+  let actionId = '', sessionId = '', actionsSent = 0, failAction = false
+  await page.route('**/api/chat', async route => {
+    const body = route.request().postDataJSON()
+    if (!body.action) { sessionId = body.sessionId; actionId = crypto.randomUUID() }
+    else {
+      expect(body.sessionId).toBe(sessionId)
+      expect(body.action.actionId).toBe(actionId)
+      expect(body.action.payload).toBeUndefined()
+      expect(['approve_movement', 'cancel_movement']).toContain(body.action.type)
+      actionsSent++
+    }
+    const result = body.action && failAction ? { type: 'error', message: 'Fallo temporal. Puedes reintentar.' } : body.action
+      ? { type: 'result', message: body.action.type === 'approve_movement' ? 'Movimiento registrado una sola vez.' : 'Propuesta cancelada sin movimiento.', resolvedActionId: actionId }
+      : { type: 'result', message: 'Fede, revisa: gasto de ₡25.00 por Almuerzo en Comida. Aún no está registrado.', actionRequest: { type: 'approve_movement', actionId, prompt: 'Revisa y confirma.' } }
+    await route.fulfill({ contentType: 'text/event-stream', body: [result, { type: 'done' }].map(event => `data: ${JSON.stringify(event)}\n\n`).join('') })
+  })
+  await enter()
+  const input = page.getByPlaceholder('Escribe una instrucción para el Asistente Financiero')
+  await input.fill('Registra un gasto de 25 colones por almuerzo en Comida hoy.')
+  await input.press('Enter')
+  await expect(page.getByText(/Aún no está registrado/)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Cancelar movimiento', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({ path: info.outputPath('movement-confirmation-mobile.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Confirmar movimiento', exact: true }).click()
+  await expect(page.getByText('Movimiento registrado una sola vez.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Confirmar movimiento', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Cancelar movimiento', exact: true })).toHaveCount(0)
+  expect(actionsSent).toBe(1)
+  await input.fill('Prepara otro movimiento de prueba para cancelarlo.')
+  await input.press('Enter')
+  await expect(page.getByRole('button', { name: 'Cancelar movimiento', exact: true })).toHaveCount(1)
+  await page.getByRole('button', { name: 'Cancelar movimiento', exact: true }).last().click()
+  await expect(page.getByText('Propuesta cancelada sin movimiento.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Cancelar movimiento', exact: true })).toHaveCount(0)
+  expect(actionsSent).toBe(2)
+  await input.fill('Prepara otro movimiento para probar un fallo temporal.')
+  await input.press('Enter')
+  await expect(page.getByRole('button', { name: 'Confirmar movimiento', exact: true })).toBeVisible()
+  failAction = true
+  await page.getByRole('button', { name: 'Confirmar movimiento', exact: true }).click()
+  await expect(page.getByText('Fallo temporal. Puedes reintentar.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Confirmar movimiento', exact: true })).toBeVisible()
+  failAction = false
+  await page.getByRole('button', { name: 'Confirmar movimiento', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Confirmar movimiento', exact: true })).toHaveCount(0)
+  expect(actionsSent).toBe(4)
+  expect(errors).toEqual([])
+})

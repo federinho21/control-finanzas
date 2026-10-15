@@ -39,7 +39,7 @@ const AgentState = Annotation.Root({
   proposedPlan: Annotation<ProposedPlan | null>,
   actionRequest: Annotation<
     | {
-        type: 'approve_tasks' | 'confirm_delete' | 'approve_plan' | 'update_sprint_status' | 'update_task_status'
+        type: 'approve_tasks' | 'confirm_delete' | 'approve_plan' | 'update_sprint_status' | 'update_task_status' | 'approve_movement'
         actionId: string
         prompt: string
         entityId?: string
@@ -49,7 +49,8 @@ const AgentState = Annotation.Root({
   >,
   refreshBacklog: Annotation<boolean>,
   judgeWarning: Annotation<string | null>,
-  guardrailError: Annotation<string | null>
+  guardrailError: Annotation<string | null>,
+  resolvedActionId: Annotation<string | null>
 })
 
 /**
@@ -255,7 +256,8 @@ const dataNode = async (state: typeof AgentState.State) => {
     proposedPlan,
     refreshBacklog: Boolean(resultAsAny.refreshBacklog),
     actionRequest,
-    guardrailError: typeof resultAsAny.guardrailError === 'string' ? resultAsAny.guardrailError : isGuardrailError ? message : null
+    guardrailError: typeof resultAsAny.guardrailError === 'string' ? resultAsAny.guardrailError : isGuardrailError ? message : null,
+    resolvedActionId: typeof resultAsAny.resolvedActionId === 'string' ? resultAsAny.resolvedActionId : null
   }
 }
 
@@ -378,7 +380,8 @@ export async function runGraph(input: RunGraphInput) {
       actionRequest: null,
       refreshBacklog: false,
       judgeWarning: null,
-      guardrailError: null
+      guardrailError: null,
+      resolvedActionId: null
     },
     { version: 'v2' }
   )
@@ -409,7 +412,8 @@ export async function runGraph(input: RunGraphInput) {
       proposedTasks: finalState.proposedTasks,
       proposedPlan: finalState.proposedPlan,
       actionRequest: finalState.actionRequest,
-      refreshBacklog: finalState.refreshBacklog
+      refreshBacklog: finalState.refreshBacklog,
+      resolvedActionId: finalState.resolvedActionId
     }
   })
 
