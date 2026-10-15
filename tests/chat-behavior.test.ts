@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildSafeFallbackIntent, detectIntent } from '../server/agents/supervisor'
+import { buildSafeFallbackIntent, detectIntent, resolveReadOnlyReportIntent } from '../server/agents/supervisor'
 import * as dataAgent from '../server/agents/data-agent'
 import type { Task } from '../shared/types/task'
 import type { Cuota } from '../shared/types/cuota'
@@ -34,6 +34,36 @@ test('foreign-currency registration is clarified before any model or database ac
   assert.equal(intent.needsClarification, true)
   assert.match(intent.clarificationQuestion!, /solo colones CRC/)
   assert.equal(intent.payload, undefined)
+})
+
+test('unambiguous Spanish totals and category questions bypass the model without changing their report contract', async () => {
+  for (const [message, operation] of [
+    ['¿Cuánto gasté este mes?', 'monthly_report'],
+    ['  ¿CUÁNTO   INGRESÉ EL MES PASADO?  ', 'monthly_report'],
+    ['¿Cuánto recibí en 2026-09?', 'monthly_report'],
+    ['¿Cuánto retiré mes pasado?', 'monthly_report'],
+    ['¿Cuál es mi saldo este mes?', 'monthly_report'],
+    ['Resumen mensual este mes.', 'monthly_report'],
+    ['Gastos por categoría este mes', 'category_report'],
+    ['¿En qué categoría gasté más el mes pasado?', 'category_report']
+  ]) {
+    const intent = await detectIntent({ uid: 'A', sessionId: crypto.randomUUID(), message: message! })
+    assert.equal(intent.route, 'data')
+    assert.equal(intent.operation, operation)
+    assert.equal(intent.needsClarification, false)
+    assert.equal(intent.payload, undefined)
+    assert.equal(intent.actionId, undefined)
+  }
+})
+
+test('the read-only shortcut never captures modifications, filters, comparisons, negation or embedded requests', () => {
+  for (const message of [
+    'Registra un gasto de 25 colones hoy.', 'No me digas cuánto gasté este mes',
+    'Cuánto gasté este mes y borra todo', '¿Cuánto gasté en Comida este mes?',
+    'Compara cuánto gasté este mes con el mes pasado', 'Explica la frase "cuánto gasté este mes"',
+    'Cuánto gasté este mes en USD', 'Cuánto gasté ayer', 'Saldo de R-AAAA este mes',
+    'Gastos por categoría de 2026-10 y 2026-09', 'Muéstrame los últimos movimientos', 'sí'
+  ]) assert.equal(resolveReadOnlyReportIntent(message), null, message)
 })
 
 test('relative report months use the Costa Rica date and handle previous January correctly', () => {

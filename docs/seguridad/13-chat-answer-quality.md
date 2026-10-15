@@ -28,6 +28,16 @@ Also passed: 27 emulator integration tests, finance typecheck, Netlify build and
 
 Balance-aware spending guidance, consistent Spanish for all other paths, and follow-up conversation context remain separate slices. Conversational registration with confirmation is covered in [the dedicated approval contract](14-conversational-movements.md). Complete cuota history and due-date scheduling are not implemented by the current status report. Dependency security, real two-user acceptance, PDFs/Storage and runtime limits remain production launch gates.
 
+## Narrow read-only routing without Gemini
+
+Live classifier latency remains variable; six-second timeouts safely refuse changes but were also preventing ordinary reports. Added an anchored, accent/case/whitespace-tolerant shortcut for a SMALL allowlist of complete Spanish questions: `Cuánto gasté/ingresé/recibí/retiré`, `Cuál es mi saldo/balance`, `Resumen mensual`, `Gastos por categoría` and `En qué categoría gasté más`, followed by `este mes`, `el mes pasado`/`mes pasado` or `en YYYY-MM`.
+
+These requests route directly to the existing `monthly_report`/`category_report` data operation, before pending-plan lookup or model access. The data operation retains exact-money calculations, Costa Rica month resolution/validation and verified-owner scoping. No values are extracted from a model, no default dates are invented, and no proposals, confirmations or financial records are created. Typed confirmations still cannot approve actions. This is not a general regex classifier: filters, comparisons, negation, IDs, other languages and compound instructions do not match and retain the existing classification/clarification path. Even an invalid `YYYY-MM` reaches existing validation, not an unvalidated query.
+
+Verification: 19 chat behavior tests passed, including eight recognized request forms and twelve excluded/ambiguous forms. The recognized cases call actual `detectIntent` with no configured database/model fixture, proving the early bypass. The existing 32-test Firestore suite now also runs the real LangGraph for owned monthly/category questions against synthetic owner/foreign fixtures; it returns CRC 0.30 without foreign data, action requests, plans, refresh signals, anchors or pending approvals. Before/after financial and cuota snapshots stay unchanged. Finance typecheck, Netlify build and 15 compiled route checks passed. No UI or SSE contract changed.
+
+Evidence: `finanzas-readonly-fastpath-integration.log` and `finanzas-readonly-fastpath-netlify-build.log` under the approved temp root. This improves availability for the listed read requests only; it does not resolve Gemini latency for conversational drafts or other specialist flows.
+
 ## Second corrective slice — categories and recent movements
 
 Added internal classifier/data operations `category_report` and `recent_movements`. Existing graph forwarding and UID-scoped `loadMovements` are reused; no new public endpoint, schema migration, IAM permission, index or dependency is needed.

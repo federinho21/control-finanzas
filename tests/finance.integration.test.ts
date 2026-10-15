@@ -475,6 +475,16 @@ test('chat category/recent/cuota queries use only the authenticated owner and ne
     const paid = await runDataOperation({ uid: 'CHAT-A', sessionId, operation: 'list_cuotas', message: 'Cuotas pagadas este mes' })
     assert.ok(String(paid.message).includes('U\\-QAA2'))
     assert.ok(!String(paid.message).includes('U\\-QAA1'))
+    const { runGraph } = await import('../server/agents/graph')
+    for (const message of ['¿Cuánto gasté este mes?', 'Gastos por categoría este mes']) {
+      const result = await runGraph({ uid: 'CHAT-A', sessionId, message })
+      assert.ok(result.response.includes('₡0.30'))
+      assert.ok(!result.response.includes('FOREIGN'))
+      assert.equal(result.actionRequest, null)
+      assert.equal(result.proposedPlan, null)
+      assert.equal(result.refreshBacklog, false)
+    }
+    for (const collection of ['rocks', 'sprints', 'pendingActions']) assert.equal((await db.collection(`users/CHAT-A/${collection}`).get()).size, 0)
     const cuotasAfter = await db.collection(`users/CHAT-A/cuotas`).get()
     assert.deepEqual(cuotasAfter.docs.map(row => row.data()), cuotasBefore.docs.map(row => row.data()))
     const after = await db.collection('payments').where('userId', 'in', ['CHAT-A', 'CHAT-B']).get()

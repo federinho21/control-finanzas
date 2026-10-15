@@ -296,6 +296,15 @@ export function buildSafeFallbackIntent(message: string, temporarilyUnavailable 
   }
 }
 
+export function resolveReadOnlyReportIntent(message: string): AgentIntent | null {
+  const text = message.normalize('NFD').replace(/\p{M}/gu, '').trim().toLowerCase().replace(/^¿|[?.]+$/g, '').replace(/\s+/g, ' ')
+  const period = '(?:este mes|(?:el )?mes pasado|en \\d{4}-\\d{2})'
+  const monthly = new RegExp(`^(?:cuanto (?:gaste|ingrese|recibi|retire)|cual es mi (?:saldo|balance)|resumen mensual) ${period}$`)
+  const categories = new RegExp(`^(?:gastos por categoria|en que categoria gaste mas) ${period}$`)
+  const operation = monthly.test(text) ? 'monthly_report' : categories.test(text) ? 'category_report' : undefined
+  return operation ? { route: 'data', operation, confidence: 1, needsClarification: false } : null
+}
+
 /**
  * Builds the routing-classifier prompt with strict JSON and explicit backlog safeguards.
  * @param message - The user input message
@@ -455,6 +464,9 @@ export async function detectIntent(input: {
   if (/\b(registra|registrar|anota|anotar|agrega|agregar|guarda|guardar)\b/i.test(message) && /\b(gastos?|ingresos?|retiros?|movimientos?)\b/i.test(message) && usesUnsupportedMovementCurrency(message)) {
     return { route: 'END', needsClarification: true, confidence: 1, clarificationQuestion: 'Fede, el registro por chat admite solo colones CRC. Confirma la moneda y el importe antes de preparar el movimiento.' }
   }
+
+  const readOnlyIntent = resolveReadOnlyReportIntent(message)
+  if (readOnlyIntent) return readOnlyIntent
 
   const pendingPlanEntry = await findPendingPlanBySessionId(input.uid, input.sessionId)
   const hasPendingPlan = !!pendingPlanEntry
