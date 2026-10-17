@@ -96,10 +96,14 @@ test('financial forms use Costa Rica dates, accessible fields and retain input a
   await page.setViewportSize({ width: 390, height: 844 })
   const { enter, errors } = await mockSession(page, 'A')
   let movementAttempts = 0, cuotaAttempts = 0
+  const movementKeys: string[] = [], cuotaKeys: string[] = []
   await page.route('**/api/movimientos', async route => {
     expect(route.request().method()).toBe('POST')
     expect(route.request().postDataJSON()).toEqual({ fecha: '2026-10-14', tipo: 'gasto', descripcion: 'Almuerzo sintético', categoria: 'Comida QA', monto: 25 })
     movementAttempts++
+    const key = route.request().headers()['idempotency-key']!
+    expect(key).toMatch(/^[a-f0-9-]{36}$/)
+    movementKeys.push(key)
     return movementAttempts === 1
       ? route.fulfill({ status: 422, json: { statusMessage: 'Synthetic rejection' } })
       : route.fulfill({ json: { id: 'T-QA01' } })
@@ -108,6 +112,9 @@ test('financial forms use Costa Rica dates, accessible fields and retain input a
     if (route.request().method() !== 'POST') return route.fulfill({ json: [] })
     expect(route.request().postDataJSON()).toEqual({ nombre: 'Cuota sintética', frecuencia: 'mensual', monto: 10, categoria: 'Prueba QA' })
     cuotaAttempts++
+    const key = route.request().headers()['idempotency-key']!
+    expect(key).toMatch(/^[a-f0-9-]{36}$/)
+    cuotaKeys.push(key)
     return cuotaAttempts === 1
       ? route.fulfill({ status: 422, json: { statusMessage: 'Synthetic rejection' } })
       : route.fulfill({ json: { id: 'U-QA01' } })
@@ -136,6 +143,7 @@ test('financial forms use Costa Rica dates, accessible fields and retain input a
   await expect(page.getByRole('alert')).toHaveCount(0)
   await expect(page.getByLabel('Descripción del movimiento', { exact: true })).toHaveValue('')
   expect(movementAttempts).toBe(2)
+  expect(movementKeys[0]).toBe(movementKeys[1])
   await page.getByRole('button', { name: 'Cuotas', exact: true }).click()
   await expect(page.locator('form')).toHaveAttribute('method', 'post')
   await expect(page.getByLabel('Frecuencia de la cuota', { exact: true })).toBeVisible()
@@ -150,11 +158,62 @@ test('financial forms use Costa Rica dates, accessible fields and retain input a
   await expect(page.getByLabel('Nombre de la cuota', { exact: true })).toHaveValue('')
   await expect(page.getByRole('alert')).toHaveCount(0)
   expect(cuotaAttempts).toBe(2)
+  expect(cuotaKeys[0]).toBe(cuotaKeys[1])
   for (const width of [320, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   }
   expect(errors.filter(error => !error.includes('Failed to load resource') || !error.includes('422'))).toEqual([])
+})
+
+test('a lost creation response retries one intent; success and edited data get distinct keys', async ({ page }) => {
+  const { enter, errors } = await mockSession(page, 'A')
+  const receipts = new Map<string, { id: string; body: unknown }>()
+  const keys: string[] = []
+  let loseResponse = true
+  await page.route('**/api/movimientos', async route => {
+    const key = route.request().headers()['idempotency-key']!
+    expect(key).toMatch(/^[a-f0-9-]{36}$/)
+    keys.push(key)
+    const body = route.request().postDataJSON()
+    if (!receipts.has(key)) receipts.set(key, { id: `T-QA0${receipts.size}`, body })
+    expect(receipts.get(key)!.body).toEqual(body)
+    if (loseResponse) { loseResponse = false; return route.abort() }
+    return route.fulfill({ json: { id: receipts.get(key)!.id } })
+  })
+  await enter()
+  await page.getByRole('link', { name: 'Finanzas', exact: true }).click()
+  const description = page.getByLabel('Descripción del movimiento', { exact: true })
+  const amount = page.getByLabel('Monto del movimiento en colones', { exact: true })
+  const category = page.getByLabel('Categoría del movimiento', { exact: true })
+  const submit = page.getByRole('button', { name: 'Agregar', exact: true })
+  await description.fill('Synthetic lost response')
+  await category.fill('Test')
+  await amount.fill('25')
+  await submit.click()
+  await expect(page.getByRole('alert')).toContainText('No se pudo confirmar el registro')
+  expect(receipts.size).toBe(1)
+  expect(keys).toHaveLength(1)
+  await expect(description).toHaveValue('Synthetic lost response')
+  await submit.click()
+  await expect(description).toHaveValue('')
+  expect(keys).toHaveLength(2)
+  expect(keys[0]).toBe(keys[1])
+  expect(receipts.size).toBe(1)
+  await description.fill('Synthetic lost response')
+  await category.fill('Test')
+  await amount.fill('25')
+  loseResponse = true
+  await submit.click()
+  await expect(page.getByRole('alert')).toContainText('No se pudo confirmar el registro')
+  expect(receipts.size).toBe(2)
+  expect(keys[2]).not.toBe(keys[1])
+  await description.fill('Distinct edited intent')
+  await submit.click()
+  await expect(description).toHaveValue('')
+  expect(keys[3]).not.toBe(keys[2])
+  expect(receipts.size).toBe(3)
+  expect(errors.filter(error => !(error.includes('net::ERR_FAILED') && error.includes('/api/movimientos')))).toEqual([])
 })
 
 test('cookie recheck, ordered SSE and logout clear user chat on desktop', async ({ page }) => {

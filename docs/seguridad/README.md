@@ -6,8 +6,8 @@ Work is deliberately incremental. Fede authorized the remaining modules together
 | --- | --- | --- |
 | 1 | Backend authentication: Firebase Admin, secure sessions, requireUser | Implemented; automated checks passed; Fede accepted Google login on preview; two-user staging acceptance pending |
 | 2 | Link Android anonymous identity to Google, preserving UID | 23 unit tests and APK build passed; Fede installed the update; remote Auth confirms Google linked to the original UID; fresh capture acceptance pending |
-| 3 | Web Google login, session hydration, logout and state reset | Implemented; 13 unit + 10 browser tests passed; web typecheck passed; Fede accepted preview login; full staging acceptance pending |
-| 4 | UID-scoped Firestore repositories and private finance APIs | Implemented; 32 emulator integration + 7 model tests passed; Fede accepted preview movement/dashboard/manual-write flows; two-user acceptance pending |
+| 3 | Web Google login, session hydration, logout and state reset | Implemented; 13 unit + 11 browser tests passed; web typecheck passed; Fede accepted preview login; full staging acceptance pending |
+| 4 | UID-scoped Firestore repositories and private finance APIs | Implemented; 35 emulator integration + 7 model tests passed; Fede accepted preview movement/dashboard/manual-write flows; keyed manual retries tested locally; two-user acceptance pending |
 | 5 | Trusted UID through LangGraph, tools and durable approvals | Implemented; emulator/SSE tests and synthetic approval/replay checks passed; latest live classifier latency remains a blocker; explicit read-only reports bypass Gemini |
 | 6 | Private uploads, document lifecycle and isolated RAG | Implemented; owner isolation and lifecycle tests passed; real Storage/PDF/Google acceptance pending |
 | 7 | Idempotent migration, cross-user acceptance tests and hosting deployment | Migration tools implemented; Netlify preview deployed and accepted for core single-user flows; production migration/deployment NOT executed |
@@ -28,5 +28,6 @@ Conversational registration: [UID/session-bound movement confirmation, cancellat
 Dependency follow-up: [DevTools removal of vulnerable Git tooling and Nano ID patches](15-devtools-nanoid-security.md).
 Runtime follow-up: [HTTP/serialization/Markdown patches and frozen-install/signature verification](16-runtime-dependency-security.md).
 Manual forms: [Costa Rica dates, accessible fields and recoverable submission errors](17-manual-form-safety.md).
+Manual retry protection: [owner-scoped idempotency keys, atomic receipts and explicit reload limits](18-manual-create-idempotency.md).
 
 **Release gate:** finance, chat, upload and document deletion authenticate and use UID-scoped Firestore. Reachable agent code no longer imports SQLite/D1. Android Google linking and single-user preview login/core finances are verified. Production still requires real two-user acceptance, fresh Android capture, a private document-storage decision and PDF/RAG acceptance, production credential/rules/index/TTL review, backup/migration decisions, runtime/monitoring/rollback evidence, acceptable live Gemini latency and dependency risk closure. Preview IAM/index configuration is not production approval. Latest production-graph audit: **20 findings (0 critical, 15 high, 4 moderate, 1 low)**; full install audit including development packages: **23 (0 critical, 15 high, 8 moderate)**. See the dependency report for reachability and unpatched roots. This is NOT a production release approval.

@@ -11,27 +11,29 @@ const form = reactive({
 
 const creating = ref(false)
 const error = ref('')
+// shortcut: retry keys last only while mounted; persist intents if reload recovery is required.
+let pendingRequest: { id: string; body: string } | undefined
 
 async function onSubmit() {
   if (creating.value) return
   error.value = ''
   creating.value = true
   try {
+    const body = { nombre: form.nombre, frecuencia: form.frecuencia, monto: form.monto, categoria: form.categoria }
+    const serialized = JSON.stringify(body)
+    if (!pendingRequest || pendingRequest.body !== serialized) pendingRequest = { id: crypto.randomUUID(), body: serialized }
     await api('/api/cuotas', {
       method: 'POST',
-      body: {
-        nombre: form.nombre,
-        frecuencia: form.frecuencia,
-        monto: form.monto,
-        categoria: form.categoria
-      }
+      headers: { 'Idempotency-Key': pendingRequest.id },
+      body
     })
+    pendingRequest = undefined
     emit('created')
     form.nombre = ''
     form.monto = ''
     form.categoria = ''
   } catch {
-    error.value = 'No se pudo confirmar el registro. Conservamos los datos; revisa tus cuotas antes de reintentar para evitar duplicados.'
+    error.value = 'No se pudo confirmar el registro. Reintenta sin cambiar los datos; si los editas o recargas, revisa antes tus cuotas.'
   } finally {
     creating.value = false
   }

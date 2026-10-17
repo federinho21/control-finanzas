@@ -18,29 +18,36 @@ const form = reactive({
 
 const creating = ref(false)
 const error = ref('')
+// shortcut: retry keys last only while mounted; persist intents if reload recovery is required.
+let pendingRequest: { id: string; body: string } | undefined
 
 async function onSubmit() {
   if (creating.value) return
   error.value = ''
   creating.value = true
   try {
+    const body = {
+      fecha: form.fecha,
+      tipo: form.tipo,
+      descripcion: form.desc,
+      categoria: form.cat,
+      monto: form.monto,
+      rockId: form.rockId || undefined
+    }
+    const serialized = JSON.stringify(body)
+    if (!pendingRequest || pendingRequest.body !== serialized) pendingRequest = { id: crypto.randomUUID(), body: serialized }
     await api('/api/movimientos', {
       method: 'POST',
-      body: {
-        fecha: form.fecha,
-        tipo: form.tipo,
-        descripcion: form.desc,
-        categoria: form.cat,
-        monto: form.monto,
-        rockId: form.rockId || undefined
-      }
+      headers: { 'Idempotency-Key': pendingRequest.id },
+      body
     })
+    pendingRequest = undefined
     emit('created')
     form.desc = ''
     form.cat = ''
     form.monto = ''
   } catch {
-    error.value = 'No se pudo confirmar el registro. Conservamos los datos; revisa tus movimientos antes de reintentar para evitar duplicados.'
+    error.value = 'No se pudo confirmar el registro. Reintenta sin cambiar los datos; si los editas o recargas, revisa antes tus movimientos.'
   } finally {
     creating.value = false
   }
