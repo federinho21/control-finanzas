@@ -3,6 +3,7 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "test:ci": "tsx --test tests/ci-policy.test.ts",
     "build:netlify": "nuxt build --preset netlify",
     "build:test": "nuxt build --preset node-server --dotenv tests/fixtures/build.env",
     "test:netlify": "tsx --tsconfig tests/tsconfig.finance.json --test tests/netlify-compat.test.ts",
