@@ -12,6 +12,7 @@ test('CI is read-only, secret-free and never deploys or suppresses check failure
   assert.deepEqual(workflow.permissions, { contents: 'read' })
   assert.deepEqual(workflow.on.push.branches, ['main', 'prepare/firebase-netlify'])
   assert.deepEqual(workflow.on.pull_request.branches, ['main'])
+  assert.ok(source.includes('github.event.pull_request.head.repo.full_name || github.repository'))
   assert.doesNotMatch(source, /pull_request_target|secrets\.|id-token:|npm audit fix|--force|npm run deploy|firebase deploy|netlify deploy|migrate:firestore|\|\| true|set \+e/)
   for (const job of Object.values(workflow.jobs)) {
     assert.equal(job['runs-on'], 'ubuntu-24.04')
@@ -44,6 +45,10 @@ test('CI retains every existing verification suite and a failing high-severity a
 })
 
 test('CI verifies the emulator before running it and keeps browser execution isolated', () => {
+  const steps = workflow.jobs.verify!.steps
+  const verified = steps.findIndex(step => step.run?.includes('sha256sum --check --strict'))
+  const integration = steps.findIndex(step => step.run === 'npm run test:finance')
+  assert.ok(verified >= 0 && integration > verified)
   assert.ok(source.includes('https://storage.googleapis.com/firebase-preview-drop/emulator/cloud-firestore-emulator-v1.22.0.jar'))
   assert.ok(source.includes('9b6498b7f62714d67f48f59b3818883cd682dbcd46b9f59511de81c97bb5166c'))
   assert.ok(source.includes('sha256sum --check --strict'))
