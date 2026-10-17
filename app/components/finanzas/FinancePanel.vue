@@ -29,9 +29,9 @@ const filteredMovements = computed(() => {
 })
 
 const sectionMeta = {
-  ingresos: { label: 'Ingresos', icon: 'i-lucide-trending-up' },
-  gastos: { label: 'Gastos', icon: 'i-lucide-trending-down' },
-  retiros: { label: 'Retiros', icon: 'i-lucide-banknote' },
+  ingresos: { label: 'Ingresos', icon: 'i-lucide-trending-up', movementType: 'ingreso' },
+  gastos: { label: 'Gastos', icon: 'i-lucide-trending-down', movementType: 'gasto' },
+  retiros: { label: 'Retiros', icon: 'i-lucide-banknote', movementType: 'retiro' },
   cuotas: { label: 'Cuotas', icon: 'i-lucide-repeat' },
   periodos: { label: 'Períodos', icon: 'i-lucide-calendar-range' }
 } as const
@@ -105,7 +105,7 @@ onMounted(loadAll)
           {{ resumen.excludedMovements }} movimientos no se sumaron: moneda distinta de CRC o datos pendientes de revisión. Los registros originales se conservan.
         </p>
 
-        <MovimientoForm @created="loadAll" />
+        <MovimientoForm :default-type="sectionMeta[tab].movementType" @created="loadAll" />
         <MovimientoTable :movements="filteredMovements" @refresh="loadAll" />
       </template>
 

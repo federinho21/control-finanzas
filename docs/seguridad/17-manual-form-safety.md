@@ -22,3 +22,11 @@ All ten browser tests passed; the focused form test passed again after adding th
 This initial form slice did not add automatic retries or manual-write idempotency. The existing shared API adapter already disables HTTP retries. The subsequent [manual-create retry contract](18-manual-create-idempotency.md) now protects unchanged keyed retries within the mounted form, but not reloads, remounts, edited intents or legacy unkeyed callers. Durable chat confirmations retain their separate replay semantics. No hydration-disabled authenticated form submission or screen-reader hardware session was performed. Production acceptance must retain these distinctions.
 
 Evidence under the approved temp root: `finanzas-form-safety-node-build.log`, `finanzas-form-safety-netlify-build.log`, and `finanzas-web-test-results`.
+
+## Section-aware movement type follow-up
+
+The finance page initially selected its **Ingresos** section while the shared movement form defaulted to **Gasto**. The same instance also retained its old type when switching movement sections. The new browser regression reproduced `Gasto` where `Ingreso` was expected.
+
+`FinancePanel` now passes its section's existing domain type through an optional `defaultType` prop. The form initializes from it and watches only that prop for section changes. Explicit selection inside the form still wins until the next section change; other callers without the prop keep the previous `gasto` default. No record is created by switching a section, and no historical record is reclassified.
+
+All 12 browser tests passed, including initial income, withdrawal/expense switches, a manually selected income submitted from the expense section, and reset to the matching default after another section change. The positive-amount/error/retry tests explicitly select Gastos when they intend an expense. Web typecheck and Node/Netlify builds passed. Evidence: `finanzas-movement-type-node-build.log`, `finanzas-movement-type-netlify-build.log` under the approved temp root. These tests use synthetic auth and intercepted writes, not production records.

@@ -6,7 +6,7 @@ Work is deliberately incremental. Fede authorized the remaining modules together
 | --- | --- | --- |
 | 1 | Backend authentication: Firebase Admin, secure sessions, requireUser | Implemented; automated checks passed; Fede accepted Google login on preview; two-user staging acceptance pending |
 | 2 | Link Android anonymous identity to Google, preserving UID | 23 unit tests and APK build passed; Fede installed the update; remote Auth confirms Google linked to the original UID; fresh capture acceptance pending |
-| 3 | Web Google login, session hydration, logout and state reset | Implemented; 13 unit + 11 browser tests passed; web typecheck passed; Fede accepted preview login; full staging acceptance pending |
+| 3 | Web Google login, session hydration, logout and state reset | Implemented; 13 unit + 12 browser tests passed; web typecheck passed; Fede accepted preview login; full staging acceptance pending |
 | 4 | UID-scoped Firestore repositories and private finance APIs | Implemented; 35 emulator integration + 7 model tests passed; Fede accepted preview movement/dashboard/manual-write flows; keyed manual retries tested locally; two-user acceptance pending |
 | 5 | Trusted UID through LangGraph, tools and durable approvals | Implemented; emulator/SSE tests and synthetic approval/replay checks passed; latest live classifier latency remains a blocker; explicit read-only reports bypass Gemini |
 | 6 | Private uploads, document lifecycle and isolated RAG | Implemented; owner isolation and lifecycle tests passed; real Storage/PDF/Google acceptance pending |

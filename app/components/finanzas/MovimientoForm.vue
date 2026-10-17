@@ -2,6 +2,7 @@
 import type { MovementType } from '~~/shared/types/task'
 import { costaRicaDate } from '~~/shared/utils/date'
 
+const props = withDefaults(defineProps<{ defaultType?: MovementType }>(), { defaultType: 'gasto' })
 const emit = defineEmits<{ (e: 'created'): void }>()
 
 const { rocks } = useBacklog()
@@ -9,12 +10,14 @@ const api = useApi()
 
 const form = reactive({
   fecha: costaRicaDate(),
-  tipo: 'gasto' as MovementType,
+  tipo: props.defaultType,
   desc: '',
   cat: '',
   monto: '',
   rockId: ''
 })
+
+watch(() => props.defaultType, tipo => { form.tipo = tipo })
 
 const creating = ref(false)
 const error = ref('')
