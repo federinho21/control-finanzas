@@ -38,11 +38,16 @@ test('runtime and build lockfile entries contain the reviewed security patches',
       undici: '^8.10.2', devalue: '^5.9.3', 'markdown-it': '^14.3.0', 'linkify-it': '^5.0.2',
       'source-map-js': '^1.2.2', svgo: '^4.1.0', 'prosemirror-view': '^1.42.3', 'brace-expansion': '^2.1.7 || ^5.0.12',
       seroval: '^1.6.3', langsmith: '>=0.6.0 <1.0.0', '@tiptap/core': '^3.30.5',
-      'fast-copy': '^4.1.0', 'postcss-selector-parser': '^7.1.6'
+      'fast-copy': '^4.1.0', 'postcss-selector-parser': '^7.1.6', '@nuxt/ui': '>=4.8.1 <5'
     })) {
       if (path.endsWith(`node_modules/${name}`)) assert.ok(satisfies(entry.version, range), `${path}: ${entry.version}`)
     }
   }
+})
+
+test('the installed Nuxt UI template defaults top-level forms to POST before hydration', () => {
+  const form = readFileSync(new URL('../node_modules/@nuxt/ui/dist/runtime/components/Form.vue', import.meta.url), 'utf8')
+  assert.ok(form.includes(':method="parentBus ? void 0 : \'post\'"'))
 })
 
 test('the UI editor dependency cannot inherit executable attributes through an own prototype key', () => {
