@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { stat } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -11,13 +11,18 @@ process.env.FIREBASE_PROJECT_ID = ''
 delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON
 const coldStart = spawnSync(process.execPath, ['--no-experimental-require-module', '--input-type=module', '-e', "await import('./.netlify/functions-internal/server/server.mjs')"], { encoding: 'utf8', env: { ...process.env, NODE_OPTIONS: '' } })
 assert.equal(coldStart.status, 0, `Plain Node cold start failed: ${coldStart.stderr}`)
+const chunks = resolve('.netlify/functions-internal/server/chunks')
+const definitions = await Promise.all((await readdir(chunks, { recursive: true })).filter(file => file.endsWith('.mjs')).map(async file => ({ file, source: await readFile(resolve(chunks, file), 'utf8') })))
+const factories = definitions.filter(module => /\bfunction getFirebaseFirestore\s*\(/.test(module.source))
+assert.equal(factories.length, 1, 'Expected one compiled Firebase factory definition.')
+const factoryModule = pathToFileURL(resolve(chunks, factories[0]!.file)).href
 const firestoreStart = spawnSync(process.execPath, ['--no-experimental-require-module', '--input-type=module', '-e', `
   import assert from 'node:assert/strict'
   import { generateKeyPairSync } from 'node:crypto'
   const key = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
   process.env.FIREBASE_PROJECT_ID = 'demo-netlify'
   process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({ type: 'service_account', project_id: 'demo-netlify', client_email: 'test@example.invalid', private_key: key })
-  const compiled = await import('./.netlify/functions-internal/server/chunks/_/nitro.mjs')
+  const compiled = await import(${JSON.stringify(factoryModule)})
   const factory = Object.values(compiled).find(value => typeof value === 'function' && value.name === 'getFirebaseFirestore')
   assert.equal(typeof factory, 'function')
   const firestore = factory()
