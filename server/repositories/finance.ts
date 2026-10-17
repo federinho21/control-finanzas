@@ -314,8 +314,8 @@ function anchorsFields(anchors: { rockId: string; sprintId: string }) { return {
 export function getFinanceRepository() { return new FinanceRepository(getFirebaseFirestore()) }
 
 export type FinanceCommand =
-  | { type: 'create_movement'; input: z.output<typeof movementInput> }
-  | { type: 'create_cuota'; input: z.output<typeof cuotaInput> }
+  | { type: 'create_movement'; input: z.output<typeof movementInput>; requestId?: string }
+  | { type: 'create_cuota'; input: z.output<typeof cuotaInput>; requestId?: string }
   | { type: 'pay_cuota'; id: string; rockId?: string }
   | { type: 'delete_cuota'; id: string }
   | { type: 'update_movement'; id: string; status: Task['status'] }

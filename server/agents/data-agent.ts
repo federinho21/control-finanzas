@@ -12,8 +12,8 @@ export function runDocumentDelete(uid: string, id: string, repository: DocumentR
 
 export async function runFinanceOperation(uid: string, command: FinanceCommand, repository: FinanceRepository) {
   switch (command.type) {
-    case 'create_movement': return repository.createMovement(uid, command.input)
-    case 'create_cuota': return repository.createCuota(uid, command.input)
+    case 'create_movement': return repository.createMovement(uid, command.input, command.requestId)
+    case 'create_cuota': return repository.createCuota(uid, command.input, command.requestId)
     case 'pay_cuota': return repository.payCuota(uid, command.id, command.rockId)
     case 'delete_cuota': return repository.deleteCuota(uid, command.id)
     case 'update_movement': return repository.updateMovementStatus(uid, command.id, command.status)

@@ -76,10 +76,11 @@ after(async () => {
   assert.equal((await stat('.data/hackathon.db').catch(() => null))?.mtimeMs, sqliteTime, 'Financial tests must not open/write SQLite')
 }, { timeout: 15000 })
 
-function request(path: string, user: string | null = 'A', options: { method?: string; body?: unknown; origin?: string } = {}) {
+function request(path: string, user: string | null = 'A', options: { method?: string; body?: unknown; origin?: string; idempotencyKey?: string } = {}) {
   return fetch(url + path, { method: options.method ?? 'GET', headers: {
     ...(user ? { cookie: `__Host-finanzas-session=${user}` } : {}),
-    origin: options.origin ?? origin, ...(options.body !== undefined ? { 'content-type': 'application/json' } : {})
+    origin: options.origin ?? origin, ...(options.body !== undefined ? { 'content-type': 'application/json' } : {}),
+    ...(options.idempotencyKey !== undefined ? { 'Idempotency-Key': options.idempotencyKey } : {})
   }, body: options.body === undefined ? undefined : JSON.stringify(options.body) })
 }
 
@@ -646,4 +647,34 @@ test('manual create receipt failures roll back and corrupt owner/result metadata
   await assert.rejects(() => repository.createMovement(uid, input, key))
   assert.equal((await db.collection(`users/${uid}/payments`).get()).size, 1)
   assert.equal((await db.doc(`users/${uid}/payments/${result.id}`).get()).data()?.monto, '0.10')
+})
+
+test('manual create HTTP headers survive the data node and reject key misuse without breaking old clients', async () => {
+  for (const [path, body, collection] of [
+    ['/api/movimientos', { fecha: costaRicaDate(), tipo: 'gasto', descripcion: 'Synthetic HTTP retry', categoria: 'Test', monto: '0.10' }, 'payments'],
+    ['/api/cuotas', { nombre: 'Synthetic HTTP retry', frecuencia: 'mensual', categoria: 'Test', monto: '0.10' }, 'cuotas']
+  ] as const) {
+    const key = crypto.randomUUID(), before = (await db.collection(`users/A/${collection}`).get()).size
+    const responses = await Promise.all(Array.from({ length: 3 }, () => request(path, 'A', { method: 'POST', body, idempotencyKey: key })))
+    for (const response of responses) assert.equal(response.status, 200)
+    const results = await Promise.all(responses.map(response => response.json() as Promise<{ id: string }>))
+    assert.equal(new Set(results.map(result => result.id)).size, 1)
+    assert.equal((await db.collection(`users/A/${collection}`).get()).size, before + 1)
+    assert.equal((await request(path, 'A', { method: 'POST', body: { ...body, monto: '0.20' }, idempotencyKey: key })).status, 409)
+    for (const badKey of ['../bad', '', 'not-a-uuid', `${key},${key}`]) {
+      assert.equal((await request(path, 'A', { method: 'POST', body, idempotencyKey: badKey })).status, 400)
+    }
+    const injectedKey = crypto.randomUUID()
+    assert.equal((await request(path, 'A', { method: 'POST', body: { ...body, userId: 'B' }, idempotencyKey: injectedKey })).status, 400)
+    assert.equal((await request(path, null, { method: 'POST', body, idempotencyKey: key })).status, 401)
+    assert.equal((await request(path, 'A', { method: 'POST', body, idempotencyKey: key, origin: 'https://attacker.invalid' })).status, 403)
+    assert.equal((await db.collection(`users/A/${collection}`).get()).size, before + 1)
+    const other = await request(path, 'B', { method: 'POST', body, idempotencyKey: key })
+    assert.equal(other.status, 200)
+    const otherId = (await other.json()).id
+    assert.equal((await db.doc(`users/B/${collection}/${otherId}`).get()).data()?.userId, 'B')
+    const legacy = await Promise.all(Array.from({ length: 2 }, () => request(path, 'A', { method: 'POST', body })))
+    for (const response of legacy) assert.equal(response.status, 200)
+    assert.equal((await db.collection(`users/A/${collection}`).get()).size, before + 3)
+  }
 })

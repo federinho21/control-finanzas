@@ -21,4 +21,6 @@ Protect manual movement and cuota creation when a write commits but its HTTP res
 
 ## Verification status
 
-Repository slice: the new tests first reproduced four movements from four concurrent retries and a missing receipt. The shared atomic receipt path now passes all 34 emulator integration tests and the finance typecheck, including owner/operation isolation, canonical payload comparison, rollback, corrupted receipt rejection and deletion replay. HTTP/UI integration and deployment are still pending.
+Repository slice: the new tests first reproduced four movements from four concurrent retries and a missing receipt. The shared atomic receipt path then passed all 34 emulator integration tests and the finance typecheck, including owner/operation isolation, canonical payload comparison, rollback, corrupted receipt rejection and deletion replay.
+
+HTTP slice: the first header integration test still reproduced three records because the old handler discarded the key. Both endpoints now validate and pass it through the data-node command to the repository. All 35 emulator integration tests, finance typecheck and 5 Netlify compatibility tests passed, including malformed headers, payload conflict, forged owner/body rejection, auth/CSRF denial and unchanged no-key clients. Browser wiring and deployment are pending; the new browser tests currently reproduce missing keys against the preceding frontend artifact.

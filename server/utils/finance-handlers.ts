@@ -48,6 +48,7 @@ export function createFinanceHandlers(dependencies: {
     }
   }
   const id = (event: H3Event) => recordId.parse(getRouterParam(event, 'id'))
+  const requestId = (event: H3Event) => z.string().uuid().optional().parse(getHeader(event, 'idempotency-key'))
   return {
     rocks: wrap((_event, uid, repo) => repo.listRocks(uid)),
     sprints: wrap((_event, uid, repo) => repo.listSprints(uid)),
@@ -61,8 +62,8 @@ export function createFinanceHandlers(dependencies: {
       return repo.monthlySummary(uid, query.mes)
     }),
     dashboard: wrap((_event, uid, repo) => repo.dashboard(uid)),
-    createMovement: wrap(async (event, uid, repo) => dependencies.write(uid, { type: 'create_movement', input: await jsonInput(event, movementInput) }, repo)),
-    createCuota: wrap(async (event, uid, repo) => dependencies.write(uid, { type: 'create_cuota', input: await jsonInput(event, cuotaInput) }, repo)),
+    createMovement: wrap(async (event, uid, repo) => dependencies.write(uid, { type: 'create_movement', input: await jsonInput(event, movementInput), requestId: requestId(event) }, repo)),
+    createCuota: wrap(async (event, uid, repo) => dependencies.write(uid, { type: 'create_cuota', input: await jsonInput(event, cuotaInput), requestId: requestId(event) }, repo)),
     payCuota: wrap(async (event, uid, repo) => {
       const cuotaId = id(event)
       const input = await jsonInput(event, cuotaPaymentInput)
