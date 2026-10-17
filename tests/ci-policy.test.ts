@@ -70,3 +70,19 @@ test('scoped typechecks use the public Nuxt directory prepared on a clean checko
   const web = JSON.parse(readFileSync(new URL('tsconfig.web.json', import.meta.url), 'utf8')) as { include: string[] }
   for (const form of ['FinancePanel', 'MovimientoForm', 'CuotaForm']) assert.ok(web.include.includes(`../app/components/finanzas/${form}.vue`), form)
 })
+
+test('main protection requires both genuine CI jobs without admin or destructive-write bypasses', () => {
+  const policy = JSON.parse(readFileSync(new URL('../.github/main-branch-protection.json', import.meta.url), 'utf8'))
+  assert.equal(policy.enforce_admins, true)
+  assert.equal(policy.allow_force_pushes, false)
+  assert.equal(policy.allow_deletions, false)
+  assert.equal(policy.restrictions, null)
+  assert.equal(policy.required_pull_request_reviews, null)
+  assert.equal(policy.required_status_checks.strict, true)
+  assert.equal(policy.required_status_checks.contexts, undefined)
+  assert.deepEqual(policy.required_status_checks.checks, [
+    { context: 'verify', app_id: 15368 },
+    { context: 'dependency-audit', app_id: 15368 }
+  ])
+  for (const check of policy.required_status_checks.checks) assert.ok(check.context in workflow.jobs)
+})

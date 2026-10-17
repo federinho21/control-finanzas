@@ -13,7 +13,7 @@ Automate the existing local checks for pushes to `prepare/firebase-netlify`/`mai
 - Bounded job timeouts and seven-day synthetic test/audit artifacts. Concurrency cancels superseded runs, not individual checks within the selected run.
 - Workflow policy assertions protect these boundaries against accidental regression. They are not a sandbox against someone intentionally editing both policy and tests.
 
-Branch protection/required-check settings are NOT changed. A visible failing job alone does not mechanically prevent a repository administrator from merging. Production launch still requires separate approval and the unresolved live-provider, two-user, Android, private-document and operational checks.
+This initial CI slice did NOT change branch protection/required-check settings. They were subsequently [installed with Fede's authorization](20-main-branch-protection.md). Production launch still requires separate approval and the unresolved live-provider, two-user, Android, private-document and operational checks.
 
 Official bootstrap sources: [Node release index](https://nodejs.org/dist/index.json), [Firebase emulator download metadata](https://github.com/firebase/firebase-tools/blob/master/src/emulator/downloadableEmulatorInfo.json), and the official actions/checkout, setup-node, setup-java and upload-artifact tag references. The emulator digest matches the existing locally tested JAR.
 
@@ -37,7 +37,7 @@ The separate native audit failed as intended and uploaded its JSON evidence: 20 
 
 The independent **dependency-audit job failed**, so the overall workflow is correctly red. It still reports 20 findings, including 15 high and zero critical; this is not a production release approval or a claim that every check is green. Post-action cache cleanup may be skipped by GitHub after failure, but no tests or audit command are conditionally waived. Superseded duplicate push/PR runs are canceled by concurrency; the selected run executes the full pipeline.
 
-The final concurrency namespace also includes the PR head repository, so an identically named branch in another fork cannot cancel the trusted preparation branch's run. Policy coverage checks that namespace and confirms checksum verification precedes emulator integration. GitHub branch protection/required checks, live Gemini latency, real two-user acceptance, PDF/storage, operational and production decisions remain separate open gates. The existing Netlify preview integration is independent of CI; this workflow neither deploys nor grants its jobs preview/production credentials.
+The final concurrency namespace also includes the PR head repository, so an identically named branch in another fork cannot cancel the trusted preparation branch's run. Policy coverage checks that namespace and confirms checksum verification precedes emulator integration. Branch protection was a separate administrative step, now recorded in [its installation checkpoint](20-main-branch-protection.md); live Gemini latency, real two-user acceptance, PDF/storage, operational and production decisions remain open gates. The existing Netlify preview integration is independent of CI; this workflow neither deploys nor grants its jobs preview/production credentials.
 
 Evidence under the approved temp root: `finanzas-ci-corrected-run-status.json` and `finanzas-ci-corrected-run-watch.log`; the public run URL preserves the exact tested revision. Existing dependency install/signature evidence is not recharacterized as proof that outstanding advisories are fixed.
 
