@@ -24,12 +24,12 @@ jobs:
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    env:
-      TMPDIR: ${{ runner.temp }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           persist-credentials: false
+      - name: Set isolated temporary directory
+        run: printf 'TMPDIR=%s\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: '24.18.0'

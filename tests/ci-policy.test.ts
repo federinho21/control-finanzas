@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import { parse } from 'yaml'
 
 interface Step { uses?: string; run?: string; if?: string; with?: Record<string, unknown>; 'continue-on-error'?: boolean }
-interface Job { steps: Step[]; 'runs-on': string; 'timeout-minutes': number; permissions?: unknown; if?: string }
+interface Job { steps: Step[]; 'runs-on': string; 'timeout-minutes': number; permissions?: unknown; if?: string; env?: Record<string, string> }
 const source = readFileSync(new URL('../.github/workflows/quality.yml', import.meta.url), 'utf8')
 const workflow = parse(source) as { on: { push: { branches: string[] }; pull_request: { branches: string[] } }; permissions: Record<string, string>; jobs: Record<string, Job> }
 
@@ -18,6 +18,7 @@ test('CI is read-only, secret-free and never deploys or suppresses check failure
     assert.ok(job['timeout-minutes'] > 0 && job['timeout-minutes'] <= 20)
     assert.equal(job.permissions, undefined)
     assert.equal(job.if, undefined)
+    for (const value of Object.values(job.env ?? {})) assert.doesNotMatch(value, /\$\{\{\s*runner\./)
     for (const step of job.steps) {
       assert.notEqual(step['continue-on-error'], true)
       if (step.uses) assert.match(step.uses, /^actions\/[a-z-]+@[a-f0-9]{40}$/)
@@ -46,7 +47,8 @@ test('CI verifies the emulator before running it and keeps browser execution iso
   assert.ok(source.includes('https://storage.googleapis.com/firebase-preview-drop/emulator/cloud-firestore-emulator-v1.22.0.jar'))
   assert.ok(source.includes('9b6498b7f62714d67f48f59b3818883cd682dbcd46b9f59511de81c97bb5166c'))
   assert.ok(source.includes('sha256sum --check --strict'))
-  assert.ok(source.includes('TMPDIR: ${{ runner.temp }}'))
+  assert.ok(source.includes('TMPDIR=%s\\n'))
+  assert.ok(source.includes('"$RUNNER_TEMP" >> "$GITHUB_ENV"'))
   assert.ok(source.includes('playwright install --with-deps chromium'))
   assert.ok(source.includes('npm run postinstall -- --dotenv tests/fixtures/build.env'))
   for (const job of Object.values(workflow.jobs)) {
