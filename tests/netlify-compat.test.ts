@@ -7,6 +7,9 @@ import { getFirebaseAuth } from '../server/firebase/admin'
 import { generateKeyPairSync } from 'node:crypto'
 import { deleteApp } from 'firebase-admin/app'
 import { createAuthService } from '../server/utils/auth-service'
+import { Firestore } from 'firebase-admin/firestore'
+import { FinanceRepository, type FinanceCommand } from '../server/repositories/finance'
+import { createFinanceHandlers } from '../server/utils/finance-handlers'
 
 test('bounded JSON accepts fetch-adapter bodies and rejects oversized or invalid input', async () => {
   const handler = toWebHandler(createApp({ debug: false }).use(eventHandler(event => readLimitedJson(event, 32))))
@@ -95,4 +98,35 @@ test('fetch-adapter Google session exchange preserves the secure cookie and reje
   for (const attribute of ['HttpOnly', 'Secure', 'SameSite=Lax', 'Path=/']) assert.ok(cookie.includes(attribute))
   assert.equal((await request({ idToken: 'test-token', userId: 'B' })).status, 400)
   assert.equal((await request({ idToken: 'test-token' }, 'https://attacker.invalid')).status, 403)
+})
+
+test('fetch-adapter manual creation preserves optional keys and canonical input without storage writes', async () => {
+  const db = new Firestore({ projectId: 'demo-netlify' })
+  const repository = new FinanceRepository(db)
+  const commands: FinanceCommand[] = []
+  const handlers = createFinanceHandlers({ user: async () => ({ uid: 'A' }), origin: () => {}, repository: () => repository, write: async (uid, command, repo) => {
+    assert.equal(uid, 'A')
+    assert.equal(repo, repository)
+    assert.ok(command.type === 'create_movement' || command.type === 'create_cuota')
+    assert.equal(command.input.monto, 2500)
+    commands.push(command)
+    return { id: command.type === 'create_movement' ? 'T-QA01' : 'U-QA01' }
+  } })
+  const key = crypto.randomUUID()
+  try {
+    for (const [handler, body] of [
+      [handlers.createMovement, { fecha: '2026-10-16', tipo: 'gasto', descripcion: 'Synthetic adapter request', categoria: 'Test', monto: '25.00' }],
+      [handlers.createCuota, { nombre: 'Synthetic adapter request', frecuencia: 'mensual', categoria: 'Test', monto: '25.00' }]
+    ] as const) {
+      const web = toWebHandler(createApp({ debug: false }).use(eventHandler(handler)))
+      const post = (requestKey?: string, value: unknown = body) => web(new Request('https://finance.example/create', { method: 'POST', headers: { 'content-type': 'application/json', ...(requestKey === undefined ? {} : { 'Idempotency-Key': requestKey }) }, body: JSON.stringify(value) }))
+      assert.equal((await post(key)).status, 200)
+      assert.equal((await post()).status, 200)
+      const count = commands.length
+      assert.equal((await post('../invalid')).status, 400)
+      assert.equal((await post(key, { ...body, userId: 'B' })).status, 400)
+      assert.equal(commands.length, count)
+    }
+    assert.deepEqual(commands.map(command => 'requestId' in command ? command.requestId : undefined), [key, undefined, key, undefined])
+  } finally { await db.terminate() }
 })
