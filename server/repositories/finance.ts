@@ -1,6 +1,7 @@
 import { FieldPath, type DocumentSnapshot, type Firestore, type Query, type Transaction } from 'firebase-admin/firestore'
 import { customAlphabet } from 'nanoid'
 import { z } from 'zod'
+import { createHash } from 'node:crypto'
 import type { Task } from '../../shared/types/task'
 import type { Cuota } from '../../shared/types/cuota'
 import { getFirebaseFirestore } from '../firebase/admin'
@@ -162,8 +163,29 @@ export class FinanceRepository {
     return deriveSprintStatus([...rows.map(row => ({ status: String(owned(row, uid).status) })), { status: 'pending' }])
   }
 
-  async createMovement(uid: string, input: z.output<typeof movementInput>) {
-    return this.firestore.runTransaction(tx => this.createMovementInTransaction(tx, uid, input))
+  private async createOnce(uid: string, kind: 'movement' | 'cuota', values: (string | number | null)[], requestId: string | undefined, create: (tx: Transaction) => Promise<{ id: string }>) {
+    if (requestId === undefined) return this.firestore.runTransaction(create)
+    const key = z.string().uuid().parse(requestId)
+    const ref = this.collection(uid, 'internal').doc(`create-${kind}-${key}`)
+    const fingerprint = createHash('sha256').update(JSON.stringify(values)).digest('hex')
+    return this.firestore.runTransaction(async tx => {
+      const receipt = await tx.get(ref)
+      if (receipt.exists) {
+        const data = owned(receipt, uid)
+        if (data.kind !== kind || data.fingerprint !== fingerprint) throw new FinanceError(409, 'Request key was already used for different data.')
+        const id = z.string().regex(kind === 'movement' ? /^T-[A-Z0-9]{4}$/ : /^U-[A-Z0-9]{4}$/).safeParse(data.id)
+        if (!id.success) throw new FinanceError(409, 'Stored creation receipt is invalid.')
+        return { id: id.data }
+      }
+      const result = await create(tx)
+      tx.create(ref, { userId: uid, kind, fingerprint, id: result.id, createdAt: new Date().toISOString() })
+      return result
+    })
+  }
+
+  async createMovement(uid: string, input: z.output<typeof movementInput>, requestId?: string) {
+    const values = [input.fecha ?? null, input.tipo, input.descripcion, input.categoria, input.monto, input.rockId ?? null]
+    return this.createOnce(uid, 'movement', values, requestId, tx => this.createMovementInTransaction(tx, uid, input))
   }
 
   protected async createMovementInTransaction(tx: Transaction, uid: string, input: z.output<typeof movementInput>) {
@@ -181,11 +203,11 @@ export class FinanceRepository {
     return { id }
   }
 
-  async createCuota(uid: string, input: z.output<typeof cuotaInput>) {
+  async createCuota(uid: string, input: z.output<typeof cuotaInput>, requestId?: string) {
     const id = `U-${idSuffix()}`
     const ref = this.collection(uid, 'cuotas').doc(id)
     const reservedRef = this.collection(uid, 'internal').doc(`quota-${id}`)
-    return this.firestore.runTransaction(async tx => {
+    return this.createOnce(uid, 'cuota', [input.nombre, input.frecuencia, input.monto, input.categoria], requestId, async tx => {
       const [current, reserved] = await Promise.all([tx.get(ref), tx.get(reservedRef)])
       if (current.exists || reserved.exists) throw new FinanceError(409, 'Generated ID collision. Retry the request.')
       const createdAt = new Date().toISOString()

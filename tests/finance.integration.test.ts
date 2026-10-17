@@ -592,3 +592,58 @@ test('a failure after queuing a movement rolls back anchors, payment and approva
   const result = await new AgentRepository(db).approveMovement(uid, sessionId, actionId)
   assert.equal((await db.doc(`users/${uid}/payments/${result.id}`).get()).data()?.monto, '1.00')
 })
+
+test('manual create retries are atomic, payload-bound and isolated by owner and operation', async () => {
+  const uid = 'MANUAL-RETRY', key = crypto.randomUUID()
+  const input = movementInput.parse({ fecha: costaRicaDate(), tipo: 'gasto', descripcion: 'Synthetic lunch', categoria: 'Test', monto: '25' })
+  const results = await Promise.all(Array.from({ length: 4 }, () => repository.createMovement(uid, input, key)))
+  assert.equal(new Set(results.map(row => row.id)).size, 1)
+  const id = results[0]!.id
+  assert.equal((await db.collection(`users/${uid}/payments`).get()).size, 1)
+  assert.equal((await db.doc(`users/${uid}/payments/${id}`).get()).data()?.monto, '25.00')
+  const equivalent = movementInput.parse({ monto: '25.00', categoria: ' Test ', descripcion: ' Synthetic lunch ', tipo: 'gasto', fecha: costaRicaDate() })
+  assert.deepEqual(await repository.createMovement(uid, equivalent, key), { id })
+  for (const changed of [{ ...input, monto: 2600 }, { ...input, descripcion: 'Changed' }, { ...input, tipo: 'ingreso' as const }, { ...input, fecha: '2020-01-01' }]) {
+    await assert.rejects(() => repository.createMovement(uid, changed, key), error => error instanceof Error && 'statusCode' in error && error.statusCode === 409)
+  }
+  assert.equal((await db.collection(`users/${uid}/payments`).get()).size, 1)
+  const receipt = (await db.doc(`users/${uid}/internal/create-movement-${key}`).get()).data()!
+  assert.equal(receipt.userId, uid)
+  assert.equal(receipt.id, id)
+  assert.match(receipt.fingerprint, /^[a-f0-9]{64}$/)
+  assert.ok(!JSON.stringify(receipt).includes('Synthetic lunch'))
+  const other = await repository.createMovement('MANUAL-OTHER', { ...input, monto: 9900 }, key)
+  assert.equal((await db.doc(`users/MANUAL-OTHER/payments/${other.id}`).get()).data()?.monto, '99.00')
+  const cuota = cuotaInput.parse({ nombre: 'Synthetic subscription', frecuencia: 'mensual', monto: '10', categoria: 'Test' })
+  const cuotas = await Promise.all(Array.from({ length: 3 }, () => repository.createCuota(uid, cuota, key)))
+  assert.equal(new Set(cuotas.map(row => row.id)).size, 1)
+  assert.equal((await db.collection(`users/${uid}/cuotas`).get()).size, 1)
+  await assert.rejects(() => repository.createCuota(uid, { ...cuota, nombre: 'Changed' }, key), error => error instanceof Error && 'statusCode' in error && error.statusCode === 409)
+  await repository.deleteMovement(uid, id)
+  assert.deepEqual(await repository.createMovement(uid, input, key), { id })
+  assert.equal((await db.collection(`users/${uid}/payments`).get()).size, 0)
+  await repository.deleteCuota(uid, cuotas[0]!.id)
+  assert.deepEqual(await repository.createCuota(uid, cuota, key), cuotas[0])
+  assert.equal((await db.collection(`users/${uid}/cuotas`).get()).size, 0)
+})
+
+test('manual create receipt failures roll back and corrupt owner/result metadata fails closed', async () => {
+  class FailingRepository extends FinanceRepository {
+    protected override async createMovementInTransaction(tx: Transaction, uid: string, input: Parameters<FinanceRepository['createMovement']>[1]): Promise<never> {
+      await super.createMovementInTransaction(tx, uid, input)
+      throw new Error('Synthetic pre-commit failure')
+    }
+  }
+  const uid = 'MANUAL-ROLLBACK', key = crypto.randomUUID()
+  const input = movementInput.parse({ fecha: costaRicaDate(), tipo: 'gasto', descripcion: 'Synthetic', categoria: 'Test', monto: '0.10' })
+  await assert.rejects(() => new FailingRepository(db).createMovement(uid, input, key), /Synthetic pre-commit failure/)
+  for (const collection of ['payments', 'rocks', 'sprints', 'periodKeys', 'internal']) assert.equal((await db.collection(`users/${uid}/${collection}`).get()).size, 0)
+  const result = await repository.createMovement(uid, input, key)
+  const ref = db.doc(`users/${uid}/internal/create-movement-${key}`)
+  await ref.update({ userId: 'OTHER' })
+  await assert.rejects(() => repository.createMovement(uid, input, key))
+  await ref.update({ userId: uid, id: '../foreign' })
+  await assert.rejects(() => repository.createMovement(uid, input, key))
+  assert.equal((await db.collection(`users/${uid}/payments`).get()).size, 1)
+  assert.equal((await db.doc(`users/${uid}/payments/${result.id}`).get()).data()?.monto, '0.10')
+})
