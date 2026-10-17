@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": [
+    "auth.test.ts",
+    "auth-build.smoke.ts",
+    "start-test-server.ts",
+    "web-session.test.ts",
+    "../app/utils/web-session.ts",
+    "../server/firebase/admin.ts",
+    "../server/utils/auth*.ts",
+    "../server/api/auth/*.ts"
+  ]
+}

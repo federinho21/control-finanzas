@@ -1,0 +1,17 @@
+{
+  "extends": "../.nuxt/tsconfig.app.json",
+  "compilerOptions": { "noEmit": true },
+  "files": ["../.nuxt/nuxt.d.ts"],
+  "include": [
+    "../.nuxt/**/*.d.ts",
+    "../app/plugins/auth.ts", "../app/plugins/firebase.client.ts",
+    "../app/composables/useAuth.ts", "../app/composables/useApi.ts",
+    "../app/middleware/auth.global.ts", "../app/utils/web-session.ts",
+    "../app/pages/login.vue", "web-session.test.ts", "auth-browser.spec.ts",
+    "../app/components/finanzas/FinancePanel.vue",
+    "../app/components/finanzas/MovimientoForm.vue",
+    "../app/components/finanzas/CuotaForm.vue",
+    "../shared/types/pdf-parse.d.ts",
+    "start-test-server.ts", "playwright.config.ts"
+  ]
+}

@@ -2,6 +2,7 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
 import { useGeminiApiKey } from '~~/server/composables/useGeminiApiKey'
 import { findPendingPlanBySessionId } from './state-store'
 import { logger } from '~~/server/utils/logger'
+import { costaRicaDate, movementDraft, usesUnsupportedMovementCurrency } from '../repositories/finance-model'
 
 export type RouteName = 'planner' | 'strategy' | 'data' | 'knowledge' | 'retro' | 'END'
 
@@ -13,6 +14,8 @@ export interface AgentIntent {
   | 'delete_rock'
   | 'list_backlog'
   | 'approve_tasks'
+  | 'cancel_plan'
+  | 'cancel_tasks'
   | 'approve_plan'
   | 'confirm_delete'
   | 'rag_query'
@@ -29,7 +32,12 @@ export interface AgentIntent {
   | 'list_cuotas'
   | 'mark_cuota_pagada'
   | 'delete_cuota'
-  | 'monthly_report'
+   | 'monthly_report'
+   | 'category_report'
+   | 'recent_movements'
+   | 'propose_movement'
+   | 'approve_movement'
+   | 'cancel_movement'
   confidence?: number
   needsClarification?: boolean
   clarificationQuestion?: string
@@ -55,6 +63,8 @@ interface IntentClassifierOutput {
   sprintId?: string
   taskId?: string
   status?: string
+  limit?: number
+  movement?: Record<string, unknown>
 }
 
 const LIST_BACKLOG_CONFIDENCE_THRESHOLD = 0.8
@@ -68,6 +78,8 @@ const CLASSIFIER_TIMEOUT_MS = 6000
 function resolveDeterministicActionIntent(input: {
   action?: { type: string; actionId?: string; payload?: Record<string, unknown> }
 }): AgentIntent | null {
+  if (input.action?.type === 'cancel_plan' || input.action?.type === 'cancel_tasks') return { route: 'data', operation: input.action.type, actionId: input.action.actionId, confidence: 1 }
+  if (input.action?.type === 'approve_movement' || input.action?.type === 'cancel_movement') return { route: 'data', operation: input.action.type, actionId: input.action.actionId, payload: input.action.payload, confidence: 1 }
   if (input.action?.type === 'approve_tasks') {
     return {
       route: 'data',
@@ -120,6 +132,7 @@ function resolveDeterministicActionIntent(input: {
     return {
       route: 'data',
       operation: 'update_task_status',
+      actionId: input.action.actionId,
       taskId: String(input.action.payload?.taskId ?? ''),
       payload: input.action.payload,
       confidence: 1,
@@ -194,6 +207,9 @@ function isIntentOperation(value: unknown): value is IntentOperation {
     || value === 'mark_cuota_pagada'
     || value === 'delete_cuota'
     || value === 'monthly_report'
+    || value === 'category_report'
+    || value === 'recent_movements'
+    || value === 'propose_movement'
 }
 
 /**
@@ -226,12 +242,12 @@ function normalizeConfidence(value: unknown): number {
  */
 function normalizeEntityId(value: unknown, prefix: 'R' | 'S' | 'T'): string | undefined {
   const raw = String(value ?? '').trim().toUpperCase()
-  const pattern = prefix === 'R' ? /^R-[A-Z0-9]{4}$/ : prefix === 'S' ? /^S-[A-Z0-9]{4}$/ : /^T-[A-Z0-9]{4}$/
+  const pattern = prefix === 'R' ? /^R-[A-Z0-9]{4}$/ : prefix === 'S' ? /^S-[A-Z0-9]{4}$/ : /^(T-[A-Z0-9]{4}|U-[A-Z0-9]{4}|[A-F0-9]{64})$/
   if (!pattern.test(raw)) {
     return undefined
   }
 
-  return raw
+  return prefix === 'T' && /^[A-F0-9]{64}$/.test(raw) ? raw.toLowerCase() : raw
 }
 
 /**
@@ -261,7 +277,7 @@ function defaultOperationForRoute(route: RouteName): IntentOperation | undefined
  * @returns A clarification question for the user
  */
 function buildClarificationQuestion(_message: string): string {
-  return 'Could you share what you want to do next? I can generate a monthly budget, register movements, manage cuotas fijas, query financial documents, or show a monthly summary.'
+  return 'Fede, no pude interpretar tu solicitud con seguridad. ¿Quieres consultar movimientos, ver un resumen mensual o preparar un presupuesto?'
 }
 
 /**
@@ -270,24 +286,23 @@ function buildClarificationQuestion(_message: string): string {
  * @param message - The user input message
  * @returns A safe fallback AgentIntent
  */
-function buildSafeFallbackIntent(message: string): AgentIntent {
-  if (message.trim().length >= 25) {
-    return {
-      route: 'strategy',
-      operation: 'generate_plan',
-      confidence: 0,
-      explicitBacklogRequest: false,
-      needsClarification: false
-    }
-  }
-
+export function buildSafeFallbackIntent(message: string, temporarilyUnavailable = false): AgentIntent {
   return {
     route: 'END',
     confidence: 0,
     explicitBacklogRequest: false,
     needsClarification: true,
-    clarificationQuestion: buildClarificationQuestion(message)
+    clarificationQuestion: temporarilyUnavailable ? 'Fede, el servicio de IA tardó demasiado o está temporalmente no disponible. No realicé cambios financieros en esta solicitud. Puedes volver a enviarla.' : buildClarificationQuestion(message)
   }
+}
+
+export function resolveReadOnlyReportIntent(message: string): AgentIntent | null {
+  const text = message.normalize('NFD').replace(/\p{M}/gu, '').trim().toLowerCase().replace(/^¿|[?.]+$/g, '').replace(/\s+/g, ' ')
+  const period = '(?:este mes|(?:el )?mes pasado|en \\d{4}-\\d{2})'
+  const monthly = new RegExp(`^(?:cuanto (?:gaste|ingrese|recibi|retire)|cual es mi (?:saldo|balance)|resumen mensual) ${period}$`)
+  const categories = new RegExp(`^(?:gastos por categoria|en que categoria gaste mas) ${period}$`)
+  const operation = monthly.test(text) ? 'monthly_report' : categories.test(text) ? 'category_report' : undefined
+  return operation ? { route: 'data', operation, confidence: 1, needsClarification: false } : null
 }
 
 /**
@@ -302,13 +317,14 @@ The user is named Fede. Always address them as Fede.
 
 You are an intent router for a personal finance assistant.
 Decide the best flow for the user message.
+Today's date in Costa Rica: ${costaRicaDate()}.
 
 Return strict JSON only, with no markdown and no extra text.
 
 JSON schema:
 {
   "route": "planner|strategy|data|knowledge|retro|END",
-  "operation": "create_rock|create_sprint|delete_rock|list_backlog|approve_tasks|approve_plan|confirm_delete|rag_query|plan_tasks|generate_plan|update_sprint_status|update_task_status|generate_retrospective|query_rock|query_sprint|query_task|modify_plan|create_cuota|list_cuotas|mark_cuota_pagada|delete_cuota|monthly_report|null",
+  "operation": "create_rock|create_sprint|delete_rock|list_backlog|approve_tasks|approve_plan|confirm_delete|rag_query|plan_tasks|generate_plan|update_sprint_status|update_task_status|generate_retrospective|query_rock|query_sprint|query_task|modify_plan|create_cuota|list_cuotas|mark_cuota_pagada|delete_cuota|monthly_report|category_report|recent_movements|propose_movement|null",
   "confidence": 0.0,
   "needsClarification": true,
   "clarificationQuestion": "string",
@@ -316,7 +332,9 @@ JSON schema:
   "rockId": "R-XXXX",
   "sprintId": "S-XXXX",
   "taskId": "T-XXXX",
-  "status": "planned|in_progress|completed|on_hold|pending|null"
+  "status": "planned|in_progress|completed|on_hold|pending|null",
+  "limit": 5,
+  "movement": null
 }
 
 ${hasPendingPlan ? `
@@ -327,6 +345,7 @@ use route "data" with operation "modify_plan".
 
 Rules:
 - Do not choose list_backlog unless the user explicitly asks to list/show/see current backlog items.
+- For an explicit request to register ONE real expense, income or withdrawal, use route data and propose_movement, never a full budget. Extract movement as {"fecha":"YYYY-MM-DD","tipo":"gasto|ingreso|retiro","descripcion":"string","categoria":"string","monto":"major-unit decimal string","currency":"CRC"}. Use the Costa Rica date above for "hoy" or when the user omits the date; resolve explicit past dates accurately. Do not invent amounts, descriptions or categories: ask a Spanish clarification when required details are unclear. Only CRC is supported; ask for clarification for USD, dollars, euros, ambiguous currencies or future movements. Do not include user/account/period IDs or approval flags. This only prepares a draft; the user must confirm using the UI before any movement is written. For all other operations, movement must be null.
 - Use route strategy with generate_plan for any free-form budgeting or planning request (monthly budget, savings goal, financial plan) that does NOT contain explicit Account IDs (R-XXXX) or Period IDs (S-XXXX).
 - Use route planner with plan_tasks ONLY when the user asks to break work into tasks AND provides explicit R-XXXX and S-XXXX identifiers.
 - If the message looks like a budgeting goal but has no IDs, always prefer strategy over planner.
@@ -338,10 +357,12 @@ Rules:
 - Use route data with operation "query_sprint" when the user asks about the details or movements of a specific period (must include S-XXXX).
 - Use route data with operation "query_task" when the user asks about the details of a specific movement (must include T-XXXX).
 - Use route data with operation "create_cuota" when the user wants to register a fixed subscription/cuota. Message format: create cuota | Name | mensual/anual | Amount | Category.
-- Use route data with operation "list_cuotas" when the user asks to show/list the fixed subscriptions (cuotas).
+- Use route data with operation "list_cuotas" when the user asks to show/list fixed subscriptions (cuotas), their amounts, current paid/pending/paused states, or due dates. This is a read-only status query, NOT mark_cuota_pagada, a budget request, monthly_report, or document search. The data agent explains missing history/due dates; never invent a due date or ask for technical IDs just to list cuotas.
 - Use route data with operation "mark_cuota_pagada" when the user wants to mark a cuota as paid. Must include a cuota ID (U-XXXX).
 - Use route data with operation "delete_cuota" when the user wants to delete a cuota. Must include a cuota ID (U-XXXX).
-- Use route data with operation "monthly_report" when the user asks for a monthly summary, balance report, or financial overview for a month (YYYY-MM).
+- Use route data with operation "monthly_report" for monthly income, expenses, withdrawals, balance or summary questions. Accept an explicit YYYY-MM or relative expressions such as "este mes", "mes pasado", "this month" and "last month"; the data agent resolves the period. Do not ask for a technical ID or route these questions to document search.
+- Use route data with operation "category_report" for expense category breakdowns, rankings, or questions about the category with the highest spending. Do not route these to document search or monthly_report. The data agent defaults to the current month if no period is specified.
+- Use route data with operation "recent_movements" to list recent movements, without requiring account/period IDs. Set limit to the requested integer (understand number words such as "cinco"); default 5. Maximum 20 per query; if the user requests more, ask them to select 1–20. If no period is specified, show recent movements across all recorded history. This route lists all movement types, not a merchant/type-specific filtered list; ask for clarification for unsupported filters, without demanding technical IDs.
 - Use route retro with generate_retrospective when user asks for a monthly analysis/review or period retrospective. Must include a Sprint ID (S-XXXX) in the message.
 - Use route "data" with operation "modify_plan" ONLY when IMPORTANT CONTEXT says a plan is pending AND the user wants to add/remove/change sprints or tasks in that plan.
 - When operation is "update_sprint_status", extract the intended status from the message if mentioned. Valid values: planned, in_progress, completed, on_hold. Set "status" to null if not mentioned.
@@ -364,16 +385,13 @@ async function classifyIntentWithGemini(message: string, hasPendingPlan: boolean
   const apiKey = useGeminiApiKey()
   const model = new ChatGoogleGenerativeAI({
     apiKey,
-    model: 'gemini-3.6-flash',
-    temperature: 0
+    model: 'gemini-3.1-flash-lite',
+    temperature: 0,
+    maxRetries: 0,
+    maxOutputTokens: 1000
   })
 
-  const invocation = model.invoke(buildClassifierPrompt(message, hasPendingPlan))
-  const timeout = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error('Intent classification timed out.')), CLASSIFIER_TIMEOUT_MS)
-  })
-
-  const response = await Promise.race([invocation, timeout])
+  const response = await model.invoke(buildClassifierPrompt(message, hasPendingPlan), { signal: AbortSignal.timeout(CLASSIFIER_TIMEOUT_MS) })
   const content = String(response.content)
   const jsonText = extractJson(content)
 
@@ -392,6 +410,8 @@ async function classifyIntentWithGemini(message: string, hasPendingPlan: boolean
     sprintId?: unknown
     taskId?: unknown
     status?: unknown
+    limit?: unknown
+    movement?: unknown
   }
 
   if (!isRouteName(parsed.route)) {
@@ -401,6 +421,10 @@ async function classifyIntentWithGemini(message: string, hasPendingPlan: boolean
   const operation = parsed.operation == null
     ? defaultOperationForRoute(parsed.route)
     : (isIntentOperation(parsed.operation) ? parsed.operation : undefined)
+
+  if (parsed.limit != null && (typeof parsed.limit !== 'number' || !Number.isInteger(parsed.limit))) throw new Error('Classifier returned an invalid movement limit.')
+  if (operation === 'propose_movement' && parsed.route !== 'data') throw new Error('Movement drafts require the data route.')
+  const movement = operation === 'propose_movement' && !parsed.needsClarification ? movementDraft.parse(parsed.movement) : undefined
 
   return {
     route: parsed.route,
@@ -412,7 +436,9 @@ async function classifyIntentWithGemini(message: string, hasPendingPlan: boolean
     rockId: normalizeEntityId(parsed.rockId, 'R'),
     sprintId: normalizeEntityId(parsed.sprintId, 'S'),
     taskId: normalizeEntityId(parsed.taskId as unknown, 'T'),
-    status: typeof parsed.status === 'string' && parsed.status !== 'null' ? parsed.status : undefined
+    status: typeof parsed.status === 'string' && parsed.status !== 'null' ? parsed.status : undefined,
+    limit: typeof parsed.limit === 'number' ? parsed.limit : undefined,
+    movement
   }
 }
 
@@ -422,6 +448,7 @@ async function classifyIntentWithGemini(message: string, hasPendingPlan: boolean
  * @returns The detected AgentIntent for routing to appropriate handler
  */
 export async function detectIntent(input: {
+  uid: string
   message: string
   sessionId: string
   action?: { type: string; actionId?: string; payload?: Record<string, unknown> }
@@ -434,7 +461,14 @@ export async function detectIntent(input: {
     return deterministicIntent
   }
 
-  const pendingPlanEntry = findPendingPlanBySessionId(input.sessionId)
+  if (/\b(registra|registrar|anota|anotar|agrega|agregar|guarda|guardar)\b/i.test(message) && /\b(gastos?|ingresos?|retiros?|movimientos?)\b/i.test(message) && usesUnsupportedMovementCurrency(message)) {
+    return { route: 'END', needsClarification: true, confidence: 1, clarificationQuestion: 'Fede, el registro por chat admite solo colones CRC. Confirma la moneda y el importe antes de preparar el movimiento.' }
+  }
+
+  const readOnlyIntent = resolveReadOnlyReportIntent(message)
+  if (readOnlyIntent) return readOnlyIntent
+
+  const pendingPlanEntry = await findPendingPlanBySessionId(input.uid, input.sessionId)
   const hasPendingPlan = !!pendingPlanEntry
 
   try {
@@ -485,9 +519,13 @@ export async function detectIntent(input: {
       rockId: classified.rockId,
       sprintId: classified.sprintId,
       taskId: classified.taskId,
-      status: classified.status
+      status: classified.status,
+      payload: classified.operation === 'recent_movements' ? { limit: classified.limit ?? 5 } : classified.operation === 'propose_movement' ? classified.movement : undefined
     }
-  } catch {
-    return buildSafeFallbackIntent(message)
+  } catch (error) {
+    const kind = error instanceof Error && ['AbortError', 'TimeoutError', 'ZodError', 'SyntaxError', 'Error', 'GoogleGenerativeAIFetchError'].includes(error.name) ? error.name : 'UnknownError'
+    const status = error && typeof error === 'object' && 'status' in error && typeof error.status === 'number' && error.status >= 100 && error.status <= 599 ? error.status : undefined
+    logger.warn('Supervisor', 'Intent classification failed; requesting clarification.', { kind, status })
+    return buildSafeFallbackIntent(message, ['AbortError', 'TimeoutError'].includes(kind) || status === 429 || (status ?? 0) >= 500)
   }
 }

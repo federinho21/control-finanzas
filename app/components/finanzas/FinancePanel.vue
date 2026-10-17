@@ -5,16 +5,17 @@ import MovimientoTable from './MovimientoTable.vue'
 import MovimientoForm from './MovimientoForm.vue'
 import CuotaForm from './CuotaForm.vue'
 import CuotaPanel from './CuotaPanel.vue'
+import { costaRicaDate } from '~~/shared/utils/date'
 
 const tab = ref<'ingresos' | 'gastos' | 'retiros' | 'cuotas' | 'periodos'>('ingresos')
 const { rocks, sprints, tasks, cuotas, loading, refreshBacklog } = useBacklog()
 const { resumen, loadResumen } = useResumen()
-const mesSeleccionado = ref<string>(new Date().toISOString().slice(0, 7))
+const mesSeleccionado = ref<string>(costaRicaDate().slice(0, 7))
 
 const mesesDisponibles = computed(() => {
   const set = new Set<string>()
   tasks.value.forEach((t) => set.add(t.deadline.slice(0, 7)))
-  set.add(new Date().toISOString().slice(0, 7))
+  set.add(costaRicaDate().slice(0, 7))
   return [...set].sort().reverse()
 })
 
@@ -28,9 +29,9 @@ const filteredMovements = computed(() => {
 })
 
 const sectionMeta = {
-  ingresos: { label: 'Ingresos', icon: 'i-lucide-trending-up' },
-  gastos: { label: 'Gastos', icon: 'i-lucide-trending-down' },
-  retiros: { label: 'Retiros', icon: 'i-lucide-cash' },
+  ingresos: { label: 'Ingresos', icon: 'i-lucide-trending-up', movementType: 'ingreso' },
+  gastos: { label: 'Gastos', icon: 'i-lucide-trending-down', movementType: 'gasto' },
+  retiros: { label: 'Retiros', icon: 'i-lucide-banknote', movementType: 'retiro' },
   cuotas: { label: 'Cuotas', icon: 'i-lucide-repeat' },
   periodos: { label: 'Períodos', icon: 'i-lucide-calendar-range' }
 } as const
@@ -74,7 +75,7 @@ onMounted(loadAll)
           :icon="meta.icon"
           size="sm"
           class="shrink-0"
-          @click="tab = key"
+          @click="() => { tab = key }"
         >
           {{ meta.label }}
         </UButton>
@@ -100,8 +101,11 @@ onMounted(loadAll)
           :retiros="resumen?.retiros ?? 0"
           :balance="resumen?.balance ?? 0"
         />
+        <p v-if="resumen?.excludedMovements" role="status" class="text-sm text-amber-200">
+          {{ resumen.excludedMovements }} movimientos no se sumaron: moneda distinta de CRC o datos pendientes de revisión. Los registros originales se conservan.
+        </p>
 
-        <MovimientoForm @created="loadAll" />
+        <MovimientoForm :default-type="sectionMeta[tab].movementType" @created="loadAll" />
         <MovimientoTable :movements="filteredMovements" @refresh="loadAll" />
       </template>
 

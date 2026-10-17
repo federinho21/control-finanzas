@@ -33,6 +33,8 @@ const today = computed(() => {
 
 const { plan, actionId, tempId, hasPlan, clearPlan } = usePlanPreview()
 const { submitAction, pending } = useChat()
+const api = useApi()
+const auth = useAuth()
 
 const editablePlan = ref<ProposedPlan | null>(null)
 
@@ -71,19 +73,22 @@ watch(
 
 // Cancels preview mode and returns to the main finance view.
 async function onCancel() {
+  const version = auth.version()
   const currentTempId = tempId.value
+  if (actionId.value && !await submitAction({ type: 'cancel_plan', actionId: actionId.value })) return
   clearPlan()
 
   // Remove the provisional document so it is not left orphaned in the database.
   if (currentTempId) {
-    await $fetch(`/api/documents/${currentTempId}`, { method: 'DELETE' }).catch(() => {})
+    await api(`/api/documents/${currentTempId}`, { method: 'DELETE' }).catch(() => {})
   }
 
-  await navigateTo('/finanzas')
+  if (version === auth.version()) await navigateTo('/finanzas')
 }
 
 // Submits the edited plan through the existing approve_plan action flow.
 async function onApprove() {
+  const version = auth.version()
   if (!editablePlan.value || !actionId.value) {
     return
   }
@@ -97,7 +102,7 @@ async function onApprove() {
     editablePlan.value
   )
 
-  if (success) {
+  if (success && version === auth.version()) {
     clearPlan()
     await navigateTo('/finanzas')
   }

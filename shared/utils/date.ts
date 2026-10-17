@@ -4,6 +4,12 @@ interface DateParts {
   day: number
 }
 
+export function costaRicaDate(time = Date.now()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Costa_Rica', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(time)
+  const field = (type: string) => parts.find(part => part.type === type)!.value
+  return `${field('year')}-${field('month')}-${field('day')}`
+}
+
 const USER_DATE_REGEX = /^(\d{2})\/(\d{2})\/(\d{4})$/
 const DB_DATE_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/
 

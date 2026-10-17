@@ -1,0 +1,112 @@
+name: Quality gates
+
+on:
+  push:
+    branches: [main, prepare/firebase-netlify]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  NPM_CONFIG_IGNORE_SCRIPTS: 'true'
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Set isolated temporary directory
+        run: printf 'TMPDIR=%s\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '24.18.0'
+          cache: npm
+      - name: Verify npm version
+        run: test "$(npm --version)" = "11.16.0"
+      - name: Frozen install without lifecycle scripts
+        run: npm ci --include=dev --ignore-scripts --no-audit
+      - run: npm run test:ci
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Download and verify the official synthetic-data emulator
+        run: |
+          mkdir -p "$HOME/.cache/firebase/emulators"
+          jar="$HOME/.cache/firebase/emulators/cloud-firestore-emulator-v1.22.0.jar"
+          curl --fail --show-error --location --output "$jar" https://storage.googleapis.com/firebase-preview-drop/emulator/cloud-firestore-emulator-v1.22.0.jar
+          printf '%s  %s\n' 9b6498b7f62714d67f48f59b3818883cd682dbcd46b9f59511de81c97bb5166c "$jar" | sha256sum --check --strict
+      - name: Explicitly prepare Nuxt types using empty credentials
+        run: npm run postinstall -- --dotenv tests/fixtures/build.env
+      - name: Scoped typechecks
+        run: |
+          npm run typecheck:auth
+          npm run typecheck:finance
+          npm run typecheck:auth:web
+      - name: Unit, security and adapter regressions
+        run: |
+          npm run test:auth
+          npm run test:auth:web
+          npm run test:finance:model
+          npm run test:migration
+          npm run test:chat:behavior
+          npm run test:security:dependencies
+          npm run test:netlify
+      - name: Synthetic Firestore integration tests
+        run: npm run test:finance
+      - name: Install the pinned Playwright browser
+        run: ./node_modules/.bin/playwright install --with-deps chromium
+      - name: Isolated Node build and browser acceptance
+        run: |
+          npm run build:test
+          npm run test:auth:build
+          npm run test:auth:browser
+      - name: Compile Netlify without deploying
+        run: |
+          npm run build:netlify
+          npm run test:netlify:build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: synthetic-browser-results
+          path: ${{ runner.temp }}/finanzas-web-test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  dependency-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '24.18.0'
+          cache: npm
+      - name: Verify npm version
+        run: test "$(npm --version)" = "11.16.0"
+      - name: Frozen install without lifecycle scripts
+        run: npm ci --include=dev --ignore-scripts --no-audit
+      - name: Block unresolved high and critical production-graph findings
+        run: npm audit --omit=dev --audit-level=high --json > "$RUNNER_TEMP/dependency-audit.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: dependency-audit
+          path: ${{ runner.temp }}/dependency-audit.json
+          if-no-files-found: ignore
+          retention-days: 7

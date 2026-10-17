@@ -8,6 +8,8 @@ const emit = defineEmits<{
 }>()
 
 const { setTempId } = usePlanPreview()
+const api = useApi()
+const auth = useAuth()
 
 const uploading = ref(false)
 const fileRef = ref<HTMLInputElement | null>(null)
@@ -40,21 +42,21 @@ async function onFileChange(event: Event) {
   }
 
   uploading.value = true
+  const version = auth.version()
   try {
-    const docTempId = crypto.randomUUID()
-
     const form = new FormData()
     form.append('file', file)
-    form.append('tempId', docTempId)
 
-    const response = await $fetch<{ filename: string; chunks: number }>('/api/upload', {
+    const response = await api<{ filename: string; chunks: number; tempId: string }>('/api/upload', {
       method: 'POST',
       body: form
     })
 
-    setTempId(docTempId)
+    if (version !== auth.version()) return
+    setTempId(response.tempId)
     emit('uploaded', { filename: response.filename, chunks: response.chunks })
   } catch (error) {
+    if (version !== auth.version()) return
     const message = error instanceof Error ? error.message : 'Could not upload file.'
     emit('uploadError', message)
   } finally {
@@ -117,7 +119,7 @@ function onTextareaKeydown(event: KeyboardEvent) {
       ref="fileRef"
       class="hidden"
       type="file"
-      accept=".txt,.md,.pdf"
+      accept=".txt,.csv,.md,.pdf"
       @change="onFileChange"
     >
   </div>

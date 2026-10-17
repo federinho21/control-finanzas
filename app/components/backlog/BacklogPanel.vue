@@ -54,7 +54,7 @@ onMounted(loadAll)
           :variant="tab === 'movimientos' ? 'solid' : 'ghost'"
           icon="i-lucide-arrow-left-right"
           size="sm"
-          @click="tab = 'movimientos'"
+          @click="() => { tab = 'movimientos' }"
         >
           Movimientos
         </UButton>
@@ -63,7 +63,7 @@ onMounted(loadAll)
           :variant="tab === 'cuotas' ? 'solid' : 'ghost'"
           icon="i-lucide-repeat"
           size="sm"
-          @click="tab = 'cuotas'"
+          @click="() => { tab = 'cuotas' }"
         >
           Cuotas fijas
         </UButton>
@@ -72,7 +72,7 @@ onMounted(loadAll)
           :variant="tab === 'periodos' ? 'solid' : 'ghost'"
           icon="i-lucide-calendar-range"
           size="sm"
-          @click="tab = 'periodos'"
+          @click="() => { tab = 'periodos' }"
         >
           Períodos
         </UButton>
