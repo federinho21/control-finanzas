@@ -67,4 +67,6 @@ test('scoped typechecks use the public Nuxt directory prepared on a clean checko
     assert.equal(JSON.parse(contents).extends, `../.nuxt/tsconfig.${generated}.json`)
     assert.ok(!contents.includes('node_modules/.cache/nuxt'))
   }
+  const web = JSON.parse(readFileSync(new URL('tsconfig.web.json', import.meta.url), 'utf8')) as { include: string[] }
+  for (const form of ['FinancePanel', 'MovimientoForm', 'CuotaForm']) assert.ok(web.include.includes(`../app/components/finanzas/${form}.vue`), form)
 })
