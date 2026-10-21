@@ -89,3 +89,5 @@ Native Firestore backups include data/index configurations but **not TTL policie
 Still unverified: a real managed backup, its schedule/retention/billing/IAM, corrupt/missing-object recovery, production index restoration, Auth/Storage recovery, actual duration/capacity, PITR and cross-database application configuration. These are separate release gates, not success claims from this rehearsal.
 
 Official local semantics: [Firestore emulator import/export](https://firebase.google.com/docs/emulator-suite/connect_firestore#import_and_export_data), [Firebase CLI export implementation](https://github.com/firebase/firebase-tools/blob/master/src/emulator/hubExport.ts), and the installed emulator 1.22.0 `--help` output. The local admin export endpoint/JAR flag are test tooling, not a new production integration.
+
+Next release slice: [finance-only AI exclusion](27-finance-only-ai-exclusion.md). The real backup and two-user/Android acceptance gates remain open.

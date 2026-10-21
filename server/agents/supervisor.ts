@@ -3,6 +3,7 @@ import { useGeminiApiKey } from '~~/server/composables/useGeminiApiKey'
 import { findPendingPlanBySessionId } from './state-store'
 import { logger } from '~~/server/utils/logger'
 import { costaRicaDate, movementDraft, usesUnsupportedMovementCurrency } from '../repositories/finance-model'
+import { AI_ENABLED, AI_DISABLED_MESSAGE } from '../../shared/finance-release'
 
 export type RouteName = 'planner' | 'strategy' | 'data' | 'knowledge' | 'retro' | 'END'
 
@@ -454,6 +455,7 @@ export async function detectIntent(input: {
   action?: { type: string; actionId?: string; payload?: Record<string, unknown> }
 }): Promise<AgentIntent> {
   const message = input.message.trim()
+  if (!AI_ENABLED && input.action?.type === 'generate_retrospective') return { route: 'END', clarificationQuestion: AI_DISABLED_MESSAGE }
   const deterministicIntent = resolveDeterministicActionIntent(input)
   if (deterministicIntent) {
     const resolved = deterministicIntent
@@ -467,6 +469,8 @@ export async function detectIntent(input: {
 
   const readOnlyIntent = resolveReadOnlyReportIntent(message)
   if (readOnlyIntent) return readOnlyIntent
+
+  if (!AI_ENABLED) return { route: 'END', needsClarification: true, confidence: 1, clarificationQuestion: AI_DISABLED_MESSAGE }
 
   const pendingPlanEntry = await findPendingPlanBySessionId(input.uid, input.sessionId)
   const hasPendingPlan = !!pendingPlanEntry

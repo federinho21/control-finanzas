@@ -7,7 +7,7 @@ async function logout() {
 }
 
 const navItems = [
-  { label: 'IA', icon: 'i-lucide-message-square', to: '/' },
+  { label: 'Consultas', icon: 'i-lucide-message-square', to: '/' },
   { label: 'Finanzas', icon: 'i-lucide-wallet', to: '/finanzas' },
   { label: 'Dashboard', icon: 'i-lucide-bar-chart-2', to: '/dashboard' },
 ]

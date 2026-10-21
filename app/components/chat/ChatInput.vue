@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { AI_ENABLED } from '~~/shared/finance-release'
+
 const modelValue = defineModel<string>({ default: '' })
 
 const emit = defineEmits<{
@@ -18,6 +20,7 @@ const textareaRef = ref<{ textarea?: HTMLTextAreaElement } | null>(null)
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5 MB
 
 function triggerFilePicker() {
+  if (!AI_ENABLED) return
   fileRef.value?.click()
 }
 
@@ -29,6 +32,7 @@ defineExpose({ focus })
 
 // Uploads the file to the indexing endpoint.
 async function onFileChange(event: Event) {
+  if (!AI_ENABLED) return
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
   if (!file) {
@@ -104,6 +108,9 @@ function onTextareaKeydown(event: KeyboardEvent) {
         variant="soft"
         size="lg"
         icon="i-lucide-paperclip"
+        aria-label="Adjuntar documento"
+        :disabled="!AI_ENABLED"
+        :title="AI_ENABLED ? 'Adjuntar documento' : 'Adjuntos no disponibles: requieren IA'"
         :loading="uploading"
         @click="triggerFilePicker"
       />
@@ -111,6 +118,7 @@ function onTextareaKeydown(event: KeyboardEvent) {
         color="primary"
         size="lg"
         icon="i-lucide-send"
+        aria-label="Enviar consulta"
         @click="emit('send')"
       />
     </div>
@@ -119,6 +127,7 @@ function onTextareaKeydown(event: KeyboardEvent) {
       ref="fileRef"
       class="hidden"
       type="file"
+      :disabled="!AI_ENABLED"
       accept=".txt,.csv,.md,.pdf"
       @change="onFileChange"
     >

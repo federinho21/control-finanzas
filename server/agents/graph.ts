@@ -11,6 +11,7 @@ import { judgeTaskCompletion } from './judge'
 import { generateRetrospective } from './retrospective'
 import { logger } from '~~/server/utils/logger'
 import { getAgentRepository } from '../repositories/agent'
+import { AI_ENABLED } from '../../shared/finance-release'
 
 /**
  * Defines the shared state schema passed between all LangGraph nodes in the agent workflow.
@@ -333,7 +334,7 @@ const graph = new StateGraph(AgentState)
   .addEdge('strategy', END)
   .addConditionalEdges('data', (state) => {
     // Route to judge when a task is marked completed, to verify consistency with uploaded documents.
-    if (state.refreshBacklog && state.intent?.operation === 'update_task_status'
+    if (AI_ENABLED && state.refreshBacklog && state.intent?.operation === 'update_task_status'
         && (state.intent?.status === 'completed' || state.intent?.payload?.status === 'completed')) {
       return 'judge'
     }

@@ -5,6 +5,7 @@ import type { ProposedTask } from '~~/shared/types/task'
 import { normalizeDateToDb } from '~~/shared/utils/date'
 import { usePlanPreview } from '~/composables/usePlanPreview'
 import { SessionChangedError } from '~/utils/web-session'
+import { AI_ENABLED } from '~~/shared/finance-release'
 
 // Parses buffered SSE chunks into JSON events and keeps incomplete data for the next read.
 function parseSseChunk(buffer: string): { events: Array<Record<string, any>>; rest: string } {
@@ -44,7 +45,9 @@ function buildWelcomeMessage(): ChatMessage {
     id: nanoid(),
     role: 'assistant',
     isWelcome: true,
-    content:
+    content: !AI_ENABLED
+      ? `👋 ¡Hola, **Fede**! Soy tu **Asistente Financiero**.\n🕐 Hoy es **${nowCr}** en Costa Rica.\n\n**¿En qué te puedo ayudar hoy?**\n\nLa IA está desactivada en esta versión. Para registrar movimientos y gestionar cuotas, usa **Finanzas**; para gráficos, **Dashboard**.\n\nPuedes consultar sin IA:\n• «¿Cuánto gasté este mes?»\n• «¿Cuánto ingresé el mes pasado?»\n• «¿Cuál es mi saldo en 2026-09?»\n• «Gastos por categoría este mes»\n\nLos presupuestos automáticos, el registro por texto libre, los análisis y los adjuntos no están disponibles. No se eliminaron tus datos.`
+      :
       `👋 ¡Hola, **Fede**! Soy tu **Asistente Financiero**.\n🕐 Hoy es **${nowCr}** en Costa Rica.\n\n**¿En qué te puedo ayudar hoy?**\n\n📋 **Presupuesto**\n• Describe un objetivo mensual y genero un plan de presupuesto completo (cuenta → períodos → movimientos)\n• Genera movimientos para una cuenta y período existentes\n• Mientras revisas el plan, pídeme modificarlo (ej. "agrega un período" o "quita el último movimiento")\n\n✅ **Movimientos**\n• Registra un gasto/ingreso/retiro y lo clasifico por categoría\n• Consulta el resumen del mes: "muéstrame el balance de 2026-08"\n• Marca un movimiento como pagado\n\n🔁 **Cuotas fijas**\n• Registra suscripciones: \`create cuota | Netflix | mensual | 5000 | Streaming\`\n• Marca una cuota como pagada (se registra como gasto automáticamente)\n\n🔍 **Consultas & RAG**\n• "Cuéntame sobre R-0001" o "¿Qué hay en S-0003?"\n• Sube un .txt o .pdf (factura, extracto bancario) y pregúntale por su contenido\n\n📈 **Análisis mensual**\n• Pide un análisis del mes (ej. "generate retro for S-0001")\n\n⚡ **Ejemplos**\n• "Crea un presupuesto para agosto"\n• "Cuéntame sobre R-0001"\n• "Marca la cuota U-0001 como pagada"`,
     createdAt: new Date().toISOString()
   }

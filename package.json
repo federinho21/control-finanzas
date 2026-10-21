@@ -14,7 +14,7 @@
     "cleanup:documents": "tsx scripts/cleanup-documents.ts",
     "test:migration": "tsx --test tests/migration.test.ts",
     "test:finance:model": "tsx --test tests/finance-model.test.ts",
-    "test:finance": "tsx --tsconfig tests/tsconfig.finance.json --test tests/finance.integration.test.ts",
+    "test:finance": "tsx --tsconfig tests/tsconfig.finance.json --test tests/finance.integration.test.ts tests/finance-only.integration.test.ts",
     "test:backup": "tsx --tsconfig tests/tsconfig.finance.json --test tests/backup-restore.integration.test.ts",
     "typecheck:finance": "tsc --project tests/tsconfig.finance.json",
     "test:auth": "tsx --test tests/auth.test.ts",

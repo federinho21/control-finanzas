@@ -3,6 +3,7 @@ import { readFile, readdir, stat } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { assertCompiledAiPolicy } from './compiled-ai-policy'
 
 const sqliteTime = (await stat('.data/hackathon.db').catch(() => null))?.mtimeMs
 process.env.NODE_ENV = 'production'
@@ -30,6 +31,7 @@ const firestoreStart = spawnSync(process.execPath, ['--no-experimental-require-m
   await firestore.terminate()
 `], { encoding: 'utf8', env: { ...process.env, NODE_OPTIONS: '' } })
 assert.equal(firestoreStart.status, 0, `Compiled Firestore initialization failed: ${firestoreStart.stderr}`)
+await assertCompiledAiPolicy('.netlify/functions-internal/server')
 const { default: handler } = await import(pathToFileURL(resolve('.netlify/functions-internal/server/server.mjs')).href)
 const request = (path: string, options: RequestInit = {}) => handler(new Request(process.env.AUTH_ORIGIN + path, options)) as Promise<Response>
 
@@ -46,4 +48,4 @@ const icons = await request('/api/_nuxt_icon/lucide.json?icons=wallet')
 assert.equal(icons.status, 200)
 assert.ok((await icons.json()).icons.wallet)
 assert.equal((await stat('.data/hackathon.db').catch(() => null))?.mtimeMs, sqliteTime)
-console.log('PASS: 15 compiled Netlify route checks; missing credentials fail closed; no Firebase network calls or SQLite writes.')
+console.log('PASS: compiled AI refusal and 15 Netlify route checks; missing credentials fail closed; no Firebase network calls or SQLite writes.')

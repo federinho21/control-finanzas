@@ -3,6 +3,7 @@ import type { UiAction } from '~~/shared/types/chat'
 import type { ProposedTask } from '~~/shared/types/task'
 import ChatInput from './ChatInput.vue'
 import ChatMessage from './ChatMessage.vue'
+import { AI_ENABLED } from '~~/shared/finance-release'
 
 const { messages, pending, sendMessage, submitAction } = useChat()
 const { pendingQuery, consumeQuery } = useChatQuery()
@@ -146,8 +147,8 @@ watch(
 <template>
   <section class="flex flex-col flex-1 h-full min-h-0 bg-transparent">
     <div class="shrink-0 pb-4 border-b border-slate-200/15">
-      <h1 class="m-0 text-xl font-semibold text-slate-100">Financial Assistant</h1>
-      <p class="mt-1 text-sm text-slate-400">Centro de control conversacional para movimientos, cuotas y presupuestos</p>
+      <h1 class="m-0 text-xl font-semibold text-slate-100">Consultas financieras</h1>
+      <p v-if="!AI_ENABLED" role="status" class="mt-1 text-sm text-slate-400">IA desactivada. Consultas limitadas de totales y categorías sin IA. Los adjuntos requieren IA y no están disponibles.</p>
     </div>
 
     <div class="flex-1 min-h-0 flex flex-col">

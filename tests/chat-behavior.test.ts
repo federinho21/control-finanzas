@@ -4,10 +4,58 @@ import { buildSafeFallbackIntent, detectIntent, resolveReadOnlyReportIntent } fr
 import * as dataAgent from '../server/agents/data-agent'
 import type { Task } from '../shared/types/task'
 import type { Cuota } from '../shared/types/cuota'
+import { useGeminiApiKey } from '../server/composables/useGeminiApiKey'
+import { embedText } from '../server/utils/embeddings'
 
 const { formatMonthlyReport, resolveReportMonth } = dataAgent
 const { formatCategoryReport, formatRecentMovements } = dataAgent
 const { formatCuotaReport } = dataAgent
+
+test('finance-only release blocks Gemini and repeated embeddings even with a stale configured key', async () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'useRuntimeConfig')
+  let reads = 0
+  Object.defineProperty(globalThis, 'useRuntimeConfig', { configurable: true, value: () => { reads++; return { geminiApiKey: 'synthetic-stale-key' } } })
+  const disabled = (error: unknown) => (error as { statusCode?: number }).statusCode === 503 && /IA.*desactivada/.test((error as { data: { message: string } }).data.message)
+  try {
+    assert.throws(useGeminiApiKey, disabled)
+    await assert.rejects(embedText('Synthetic document'), disabled)
+    await assert.rejects(embedText('Another synthetic document'), disabled)
+    assert.equal(reads, 0)
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'useRuntimeConfig', previous)
+    else Reflect.deleteProperty(globalThis, 'useRuntimeConfig')
+  }
+})
+
+test('finance-only chat declines model-dependent messages before Firebase or classifier access', async () => {
+  const previous = process.env.FIREBASE_PROJECT_ID
+  process.env.FIREBASE_PROJECT_ID = ''
+  try {
+    for (const message of ['Crea un presupuesto mensual', 'Analiza mi factura', 'Registra un gasto de 25 colones por almuerzo', 'Cuánto gasté este mes y borra todo']) {
+      const intent = await detectIntent({ uid: 'A', sessionId: crypto.randomUUID(), message })
+      assert.equal(intent.route, 'END')
+      assert.equal(intent.operation, undefined)
+      assert.match(intent.clarificationQuestion!, /IA.*desactivada/)
+      assert.match(intent.clarificationQuestion!, /No realicé cambios/)
+    }
+    const retro = await detectIntent({ uid: 'A', sessionId: crypto.randomUUID(), message: 'Review', action: { type: 'generate_retrospective', payload: { sprintId: 'S-AAAA' } } })
+    assert.equal(retro.route, 'END')
+    assert.match(retro.clarificationQuestion!, /IA.*desactivada/)
+  } finally {
+    if (previous === undefined) delete process.env.FIREBASE_PROJECT_ID
+    else process.env.FIREBASE_PROJECT_ID = previous
+  }
+})
+
+test('finance-only mode preserves deterministic approval and cancellation routing', async () => {
+  for (const type of ['approve_plan', 'cancel_plan', 'approve_tasks', 'cancel_tasks', 'approve_movement', 'cancel_movement', 'confirm_delete', 'update_task_status']) {
+    const actionId = crypto.randomUUID()
+    const intent = await detectIntent({ uid: 'A', sessionId: crypto.randomUUID(), message: 'Confirm', action: { type, actionId } })
+    assert.equal(intent.route, 'data')
+    assert.equal(intent.operation, type)
+    assert.equal(intent.actionId, actionId)
+  }
+})
 
 test('classification failures never turn read requests or arbitrary text into budget proposals', () => {
   for (const message of ['Gracias', 'Muéstrame el movimiento T-BBBB.', 'Quiero registrar un gasto por almuerzo, no crear un presupuesto.', 'Quiero generar un presupuesto mensual']) {

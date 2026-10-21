@@ -10,6 +10,43 @@ import { createAuthService } from '../server/utils/auth-service'
 import { Firestore } from 'firebase-admin/firestore'
 import { FinanceRepository, type FinanceCommand } from '../server/repositories/finance'
 import { createFinanceHandlers } from '../server/utils/finance-handlers'
+import { createUploadHandler } from '../server/api/upload.post'
+import { runGraph } from '../server/agents/graph'
+
+test('finance-only upload authenticates and checks origin before refusal, without quota or storage access', async () => {
+  const origin = 'https://finance.example'
+  const auth = createAuthService({ production: true, origin: () => origin, provider: async () => ({
+    verifySessionCookie: async () => ({ uid: 'A', auth_time: 0, firebase: { sign_in_provider: 'google.com' } }),
+    verifyIdToken: async () => { throw new Error('Not used') },
+    createSessionCookie: async () => { throw new Error('Not used') }, revokeRefreshTokens: async () => {}
+  }) })
+  const handler = toWebHandler(createApp({ debug: false }).use(createUploadHandler({ user: auth.requireUser, origin: auth.requireOrigin })))
+  const request = (cookie = '__Host-finanzas-session=synthetic', requestOrigin = origin) => handler(new Request(origin + '/api/upload', {
+    method: 'POST', headers: { cookie, origin: requestOrigin, 'content-type': 'application/octet-stream' }, body: 'Unparsed synthetic bytes'
+  }))
+  assert.equal((await request('')).status, 401)
+  assert.equal((await request(undefined, 'https://attacker.invalid')).status, 403)
+  const response = await request()
+  assert.equal(response.status, 503)
+  assert.match((await response.json()).data.message, /IA.*desactivada/)
+  assert.equal(response.headers.get('cache-control'), 'no-store')
+})
+
+test('the real finance-only graph returns an honest result followed by one terminal SSE done', async () => {
+  const handler = toWebHandler(createApp({ debug: false }).use(createChatHandler({ user: async () => ({ uid: 'A' }), origin: () => {}, quota: async () => {}, graph: runGraph })))
+  for (const action of [undefined, { type: 'generate_retrospective', payload: { sprintId: 'S-AAAA' } }]) {
+    const response = await handler(new Request('https://finance.example/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: crypto.randomUUID(), message: 'Crea un presupuesto', action }) }))
+    assert.equal(response.status, 200)
+    const events = (await response.text()).trim().split('\n\n').map(line => JSON.parse(line.slice(6)))
+    assert.equal(events.at(-1).type, 'done')
+    assert.equal(events.filter(event => event.type === 'done').length, 1)
+    const result = events.find(event => event.type === 'result')
+    assert.match(result.message, /IA.*desactivada/)
+    assert.equal(result.refreshBacklog, false)
+    assert.equal(result.actionRequest, null)
+    assert.ok(!events.some(event => ['error', 'judge', 'guardrail'].includes(event.type)))
+  }
+})
 
 test('bounded JSON accepts fetch-adapter bodies and rejects oversized or invalid input', async () => {
   const handler = toWebHandler(createApp({ debug: false }).use(eventHandler(event => readLimitedJson(event, 32))))

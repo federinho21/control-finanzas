@@ -1,5 +1,8 @@
+import { requireAiEnabled } from '../utils/ai-policy'
+
 // Returns the Gemini API key from Nuxt runtime config.
 export function useGeminiApiKey(): string {
+  requireAiEnabled()
   const runtimeConfig = useRuntimeConfig() as { geminiApiKey?: string }
   const apiKey = runtimeConfig.geminiApiKey?.trim()
 

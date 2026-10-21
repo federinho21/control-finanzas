@@ -91,6 +91,27 @@ test('missing Firebase configuration reports a generic recoverable login failure
   expect(errors).toEqual([])
 })
 
+test('finance-only chat explains its limits and disables attachments on desktop and mobile', async ({ page }, info) => {
+  const { enter, errors } = await mockSession(page, 'A')
+  let uploads = 0
+  page.on('request', request => { if (new URL(request.url()).pathname === '/api/upload') uploads++ })
+  await enter()
+  await expect(page.getByRole('heading', { name: 'Consultas financieras' })).toBeVisible()
+  await expect(page.getByRole('status')).toContainText('IA desactivada')
+  await expect(page.getByRole('button', { name: 'Adjuntar documento' })).toBeDisabled()
+  await expect(page.getByText('¿Cuánto gasté este mes?', { exact: false }).first()).toBeVisible()
+  await expect(page.getByText('Describe un objetivo mensual y genero un plan', { exact: false })).toHaveCount(0)
+  for (const width of [320, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await expect(page.getByRole('link', { name: 'Consultas', exact: true }).filter({ visible: true })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  }
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({ path: info.outputPath('finance-only-chat-mobile.png'), fullPage: true })
+  expect(uploads).toBe(0)
+  expect(errors).toEqual([])
+})
+
 test('financial forms use Costa Rica dates, accessible fields and retain input after rejected writes', async ({ page }, info) => {
   await page.clock.setFixedTime(new Date('2026-10-15T02:00:00Z'))
   await page.setViewportSize({ width: 390, height: 844 })
@@ -282,7 +303,7 @@ test('switching cookie identity removes old chat and reloads dashboard data', as
   await page.getByRole('link', { name: 'Dashboard', exact: true }).first().click()
   await expect(page.getByRole('heading', { name: 'Dashboard Financiero' })).toBeVisible()
   await expect(page.getByText(/^₡456[.,]00$/)).toBeVisible()
-  await page.getByRole('link', { name: 'IA', exact: true }).first().click()
+  await page.getByRole('link', { name: 'Consultas', exact: true }).first().click()
   await expect(input).toBeVisible()
   await expect(page.getByText('PRIVATE CHAT A', { exact: true })).toHaveCount(0)
   expect(errors).toEqual([])

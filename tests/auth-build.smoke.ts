@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
 import { startTestServer } from './start-test-server'
+import { assertCompiledAiPolicy } from './compiled-ai-policy'
+
+await assertCompiledAiPolicy('.output/server')
 
 const server = await startTestServer()
 const origin = server.url
@@ -26,7 +29,7 @@ try {
   const icons = await fetch(origin + '/api/_nuxt_icon/lucide.json?icons=wallet')
   assert.equal(icons.status, 200)
   assert.ok((await icons.json()).icons.wallet)
-  console.log('PASS: 15 compiled Nitro auth/page/API/asset checks; no Firebase calls or production data access.')
+  console.log('PASS: compiled AI refusal and 15 Nitro auth/page/API/asset checks; no Firebase calls or production data access.')
   console.log(`Isolated test directory: ${server.directory}`)
 } finally {
   server.stop()
