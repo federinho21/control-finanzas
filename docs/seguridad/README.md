@@ -1,6 +1,6 @@
 # Security and Firebase migration modules
 
-**Current checkpoint — October 20, 2026:** [project recap, verified state and prioritized continuation plan](22-recapitulacion-y-plan-de-continuidad.md). Read this first. Earlier numbered documents preserve their historical evidence, not current release status. Fresh local production-graph audit: **18 findings (0 critical, 14 high, 3 moderate, 1 low)**. The gRPC patch remains local/uncommitted; no production approval.
+**Current dependency checkpoint:** [tested reductions and remaining upstream blockers](24-dependency-reduction-checkpoint.md). Both production and full native audits now report **11 high, 0 critical, 0 moderate and 0 low findings**, from two unpatched roots. gRPC and the subsequent patches are committed on preparation; clean remote verification is tracked in the PR. The [project recap](22-recapitulacion-y-plan-de-continuidad.md) retains its earlier 18-finding snapshot as history. No production approval or audit waiver.
 
 Work is deliberately incremental. Fede authorized the remaining modules together with "HAZ LOS MODULOS FALTANTES". No production deployment or data migration is implied by implementing them.
 
