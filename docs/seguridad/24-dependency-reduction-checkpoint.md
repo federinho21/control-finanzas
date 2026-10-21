@@ -1,5 +1,7 @@
 # Dependency reduction — tested remediation checkpoint
 
+Follow-up: [source tracing, instrumented compilation and the decision boundary for the two unpatched roots](25-unpatched-dependency-reachability.md). No exposed web path was identified in the inspected local artifact, but build/development risks remain; no waiver or production approval was granted. The clean remote run on `625e60d` subsequently passed `verify` and retained the failing eleven-high audit; that result is linked in the PR checkpoint.
+
 ## Outcome and scope
 
 Fede requested the lowest practical advisory count without weakening checks. Native audit now reports **11 high, 0 critical, 0 moderate and 0 low findings**, both with `--omit=dev` and for the full installation. The starting October 20 snapshot was **18 total: 14 high, 3 moderate, 1 low**. The remaining eleven findings propagate from **two unpatched roots**, not eleven independent defects.
