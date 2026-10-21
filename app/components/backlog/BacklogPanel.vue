@@ -54,7 +54,7 @@ onMounted(loadAll)
           :variant="tab === 'movimientos' ? 'solid' : 'ghost'"
           icon="i-lucide-arrow-left-right"
           size="sm"
-          @click="tab = 'movimientos'"
+          @click="() => { tab = 'movimientos' }"
         >
           Movimientos
         </UButton>
@@ -63,7 +63,7 @@ onMounted(loadAll)
           :variant="tab === 'cuotas' ? 'solid' : 'ghost'"
           icon="i-lucide-repeat"
           size="sm"
-          @click="tab = 'cuotas'"
+          @click="() => { tab = 'cuotas' }"
         >
           Cuotas fijas
         </UButton>
@@ -72,7 +72,7 @@ onMounted(loadAll)
           :variant="tab === 'periodos' ? 'solid' : 'ghost'"
           icon="i-lucide-calendar-range"
           size="sm"
-          @click="tab = 'periodos'"
+          @click="() => { tab = 'periodos' }"
         >
           Períodos
         </UButton>
@@ -110,7 +110,7 @@ onMounted(loadAll)
         <SprintCard v-for="sprint in sprints" :key="sprint.id" :sprint="sprint" />
         <div v-if="!sprints.length" class="glass-panel p-6 text-center">
           <p class="font-semibold text-slate-200 m-0">No hay períodos aún.</p>
-          <p class="text-sm text-slate-400 mt-1 m-0">Genera un presupuesto para crear períodos mensuales.</p>
+          <p class="text-sm text-slate-400 mt-1 m-0">Registra un movimiento en Finanzas para crear el período correspondiente.</p>
         </div>
       </div>
     </div>

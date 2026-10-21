@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function boundedText(data, field, limit) {
+      return !(field in data) || data[field] == null
+        || (data[field] is string && data[field].size() <= limit);
+    }
+    function validPayment(data) {
+      return data.parsed is bool
+        && data.timestamp is int && data.timestamp > 0
+        && boundedText(data, 'merchant', 400)
+        && boundedText(data, 'counterpartyName', 400)
+        && boundedText(data, 'institution', 200)
+        && boundedText(data, 'categoria', 200)
+        && boundedText(data, 'category', 200)
+        && boundedText(data, 'currency', 3)
+        && boundedText(data, 'direction', 20)
+        && boundedText(data, 'transactionType', 20)
+        && boundedText(data, 'rawText', 100000)
+        && (!('amount' in data) || data.amount == null
+          || (data.amount is number && data.amount >= 0 && data.amount <= 10000000000));
+    }
+    match /payments/{paymentId} {
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid
+        && validPayment(request.resource.data);
+      allow read, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && validPayment(request.resource.data);
+    }
+    match /users/{uid}/{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

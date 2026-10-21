@@ -4,7 +4,7 @@ import type { ProposedPlan } from './plan'
 export type ChatRole = 'user' | 'assistant' | 'system' | 'status' | 'judge' | 'guardrail' | 'warning' | 'error'
 
 export interface UiAction {
-  type: 'approve_tasks' | 'confirm_delete' | 'approve_plan' | 'update_sprint_status' | 'update_task_status'
+  type: 'approve_tasks' | 'confirm_delete' | 'approve_plan' | 'update_sprint_status' | 'update_task_status' | 'approve_movement' | 'cancel_movement'
   actionId: string
   label: string
   variant?: 'solid' | 'soft' | 'outline'

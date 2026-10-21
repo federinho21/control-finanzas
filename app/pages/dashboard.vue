@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { Doughnut, Bar } from 'vue-chartjs'
 
-const { data: dashboard, refresh, pending } = await useFetch('/api/dashboard')
+const api = useApi()
+const { data: dashboard, refresh, pending } = await useAsyncData('finance-dashboard', () => api<{
+  month: string; ingresos: number; gastos: number; retiros: number; balance: number; movementsCount: number; excludedMovements?: number
+  byCategory: Array<{ category: string; gastos: number; ingresos: number }>
+  totals: { ingresos: number; gastos: number; retiros: number }
+  cuotas: { total: number; activas: number; pendientes: number }
+}>('/api/dashboard'))
 
 const fmt = (n: number) => '₡' + Number(n).toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -60,6 +66,9 @@ const categoryData = computed(() => {
       <UButton icon="i-lucide-refresh-cw" variant="ghost" size="sm" :loading="pending" @click="refresh()">Refresh</UButton>
     </div>
 
+    <p v-if="dashboard?.excludedMovements" role="status" class="text-sm text-amber-200">
+      {{ dashboard.excludedMovements }} movimientos no se sumaron: moneda distinta de CRC o datos pendientes de revisión. Los registros originales se conservan.
+    </p>
     <!-- KPI Cards -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <div class="glass-panel glass-panel-hover p-5 text-center">

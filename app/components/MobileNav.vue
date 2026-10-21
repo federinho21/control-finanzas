@@ -1,8 +1,13 @@
 <script setup lang="ts">
 const route = useRoute()
+const auth = useAuth()
+async function logout() {
+  await auth.logout()
+  await navigateTo('/login')
+}
 
 const navItems = [
-  { label: 'IA', icon: 'i-lucide-message-square', to: '/' },
+  { label: 'Consultas', icon: 'i-lucide-message-square', to: '/' },
   { label: 'Finanzas', icon: 'i-lucide-wallet', to: '/finanzas' },
   { label: 'Dashboard', icon: 'i-lucide-bar-chart-2', to: '/dashboard' },
 ]
@@ -24,5 +29,6 @@ function isActive(to: string) {
       <UIcon :name="item.icon" class="w-5 h-5 shrink-0" />
       <span class="text-[0.6rem] font-semibold tracking-wide">{{ item.label }}</span>
     </NuxtLink>
+    <UButton icon="i-lucide-log-out" variant="ghost" aria-label="Cerrar sesión" :loading="auth.busy.value" @click="logout" />
   </nav>
 </template>

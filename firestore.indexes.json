@@ -1,0 +1,30 @@
+{
+  "indexes": [
+    { "collectionGroup": "payments", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "userId", "order": "ASCENDING" },
+      { "fieldPath": "timestamp", "order": "DESCENDING" }
+    ] },
+    { "collectionGroup": "payments", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "userId", "order": "ASCENDING" },
+      { "fieldPath": "deadline", "order": "DESCENDING" }
+    ] },
+    { "collectionGroup": "pendingActions", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "userId", "order": "ASCENDING" },
+      { "fieldPath": "sessionId", "order": "ASCENDING" },
+      { "fieldPath": "kind", "order": "ASCENDING" },
+      { "fieldPath": "state", "order": "ASCENDING" },
+      { "fieldPath": "createdAt", "order": "DESCENDING" }
+    ] },
+    { "collectionGroup": "documentChunks", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "userId", "order": "ASCENDING" },
+      { "fieldPath": "status", "order": "ASCENDING" },
+      { "fieldPath": "createdAt", "order": "DESCENDING" }
+    ] }
+  ],
+  "fieldOverrides": [
+    { "collectionGroup": "pendingActions", "fieldPath": "purgeAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "rateLimits", "fieldPath": "purgeAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "documentChunks", "fieldPath": "embedding", "indexes": [] },
+    { "collectionGroup": "documentChunks", "fieldPath": "chunkText", "indexes": [] }
+  ]
+}

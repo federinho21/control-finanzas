@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { AI_ENABLED } from '~~/shared/finance-release'
+
 const modelValue = defineModel<string>({ default: '' })
 
 const emit = defineEmits<{
@@ -8,6 +10,8 @@ const emit = defineEmits<{
 }>()
 
 const { setTempId } = usePlanPreview()
+const api = useApi()
+const auth = useAuth()
 
 const uploading = ref(false)
 const fileRef = ref<HTMLInputElement | null>(null)
@@ -16,6 +20,7 @@ const textareaRef = ref<{ textarea?: HTMLTextAreaElement } | null>(null)
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5 MB
 
 function triggerFilePicker() {
+  if (!AI_ENABLED) return
   fileRef.value?.click()
 }
 
@@ -27,6 +32,7 @@ defineExpose({ focus })
 
 // Uploads the file to the indexing endpoint.
 async function onFileChange(event: Event) {
+  if (!AI_ENABLED) return
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
   if (!file) {
@@ -40,21 +46,21 @@ async function onFileChange(event: Event) {
   }
 
   uploading.value = true
+  const version = auth.version()
   try {
-    const docTempId = crypto.randomUUID()
-
     const form = new FormData()
     form.append('file', file)
-    form.append('tempId', docTempId)
 
-    const response = await $fetch<{ filename: string; chunks: number }>('/api/upload', {
+    const response = await api<{ filename: string; chunks: number; tempId: string }>('/api/upload', {
       method: 'POST',
       body: form
     })
 
-    setTempId(docTempId)
+    if (version !== auth.version()) return
+    setTempId(response.tempId)
     emit('uploaded', { filename: response.filename, chunks: response.chunks })
   } catch (error) {
+    if (version !== auth.version()) return
     const message = error instanceof Error ? error.message : 'Could not upload file.'
     emit('uploadError', message)
   } finally {
@@ -102,6 +108,9 @@ function onTextareaKeydown(event: KeyboardEvent) {
         variant="soft"
         size="lg"
         icon="i-lucide-paperclip"
+        aria-label="Adjuntar documento"
+        :disabled="!AI_ENABLED"
+        :title="AI_ENABLED ? 'Adjuntar documento' : 'Adjuntos no disponibles: requieren IA'"
         :loading="uploading"
         @click="triggerFilePicker"
       />
@@ -109,6 +118,7 @@ function onTextareaKeydown(event: KeyboardEvent) {
         color="primary"
         size="lg"
         icon="i-lucide-send"
+        aria-label="Enviar consulta"
         @click="emit('send')"
       />
     </div>
@@ -117,7 +127,8 @@ function onTextareaKeydown(event: KeyboardEvent) {
       ref="fileRef"
       class="hidden"
       type="file"
-      accept=".txt,.md,.pdf"
+      :disabled="!AI_ENABLED"
+      accept=".txt,.csv,.md,.pdf"
       @change="onFileChange"
     >
   </div>
