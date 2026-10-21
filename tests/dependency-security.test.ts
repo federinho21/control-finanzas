@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { ssrRenderAttrs } from '@vue/server-renderer'
 import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
+import { isAbsolute, resolve } from 'node:path'
 import { parse, stringify } from 'devalue'
 import MarkdownIt from 'markdown-it'
 import { mergeAttributes } from '@tiptap/core'
@@ -38,7 +39,8 @@ test('runtime and build lockfile entries contain the reviewed security patches',
       undici: '^8.10.2', devalue: '^5.9.3', 'markdown-it': '^14.3.3', 'linkify-it': '^5.0.2',
       'source-map-js': '^1.2.2', svgo: '^4.1.0', 'prosemirror-view': '^1.42.3', 'brace-expansion': '^2.1.7 || ^5.0.12',
       seroval: '^1.6.3', langsmith: '>=0.6.0 <1.0.0', '@tiptap/core': '^3.30.5',
-      'fast-copy': '^4.1.0', 'postcss-selector-parser': '^7.1.6', '@nuxt/ui': '>=4.8.1 <5', '@grpc/grpc-js': '^1.14.6'
+      'fast-copy': '^4.1.0', 'postcss-selector-parser': '^7.1.6', '@nuxt/ui': '>=4.8.1 <5', '@grpc/grpc-js': '^1.14.6',
+      'launch-editor': '^2.14.2', vite: '>=8.2.4 <8.3.0 || ^8.3.3'
     })) {
       if (path.endsWith(`node_modules/${name}`)) assert.ok(satisfies(entry.version, range), `${path}: ${entry.version}`)
     }
@@ -144,4 +146,23 @@ test('editor shell quoting rejects line terminators after comment tokens without
 test('editor shell quoting preserves ordinary paths, quotes and metacharacters as arguments', () => {
   const args = ['code', 'C:\\Users\\Fede\\Finance notes.txt', "Fede's file", 'a;b', '$(not-run)', '']
   assert.deepEqual(editorQuote.parse(editorQuote.quote(args)), args)
+})
+
+test('Windows editor command construction rejects expansion and line breaks without launching anything', () => {
+  const command = require('launch-editor/construct-windows-launch-command')
+  for (const file of ['C:\\synthetic\\%PATH%.vue', 'C:\\synthetic\\a\nb.vue', 'C:\\synthetic\\a\rb.vue']) {
+    assert.throws(() => command('code', [file]), Error)
+  }
+  assert.equal(command('code', ['C:\\synthetic\\Finance notes.vue']), 'code "C:\\synthetic\\Finance notes.vue"')
+})
+
+test('editor paths become absolute before existence checks and cannot become relative CLI flags', () => {
+  const parseFile = require('launch-editor/parse-file')
+  const args = require('launch-editor/get-args')
+  const parsed = parseFile('+synthetic.vue:12:3')
+  assert.equal(parsed.fileName, resolve('+synthetic.vue'))
+  assert.equal(parsed.lineNumber, '12')
+  assert.equal(parsed.columnNumber, '3')
+  assert.ok(isAbsolute(args('vim', '+synthetic.vue')[0]))
+  assert.equal(parseFile('missing/..:1:1').fileName, resolve('missing/..'))
 })
