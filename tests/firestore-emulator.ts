@@ -1,10 +1,12 @@
 import { execFile, spawn } from 'node:child_process'
-import { mkdtemp, readdir } from 'node:fs/promises'
+import { mkdtemp, readdir, realpath, stat } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-export async function startFirestoreEmulator() {
+export async function startFirestoreEmulator(seedFromExport?: string) {
+  const seed = seedFromExport === undefined ? undefined : await realpath(seedFromExport)
+  if (seed && (!seed.endsWith('.overall_export_metadata') || !(await stat(seed)).isFile())) throw new Error('An export metadata file is required.')
   const cache = join(homedir(), '.cache', 'firebase', 'emulators')
   const jars = (await readdir(cache)).filter(file => /^cloud-firestore-emulator-v.*\.jar$/.test(file)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
   if (!jars.length) throw new Error('Download the official Firestore emulator using Firebase CLI before running this test.')
@@ -19,7 +21,7 @@ export async function startFirestoreEmulator() {
   }
   const port = await freePort(), websocket = await freePort()
   const java = process.env.JAVA_HOME ? join(process.env.JAVA_HOME, 'bin', process.platform === 'win32' ? 'java.exe' : 'java') : 'java'
-  const child = spawn(java, ['-jar', join(cache, jars[jars.length - 1]!), '--host', '127.0.0.1', '--port', String(port), '--websocket_port', String(websocket), '--project_id', 'demo-control-finanzas', '--single_project_mode', '--single_project_mode_error', '--rules', resolve('firestore.rules')], { cwd: directory, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(java, ['-jar', join(cache, jars[jars.length - 1]!), '--host', '127.0.0.1', '--port', String(port), '--websocket_port', String(websocket), '--project_id', 'demo-control-finanzas', '--single_project_mode', '--single_project_mode_error', '--rules', resolve('firestore.rules'), ...(seed ? ['--seed_from_export', seed] : [])], { cwd: directory, stdio: ['ignore', 'pipe', 'pipe'] })
   let output = ''
   try {
     await new Promise<void>((resolve, reject) => {

@@ -114,3 +114,5 @@ Approved temp root: `C:\Users\Fede\AppData\Local\Temp\opencode\`.
 - `finanzas-artifact-reachability.cjs`: temporary scanner; SHA-256 `0f7372e0a49bf5488f78830b7e80c4fb2a862001f688186f4f29d61e93aea301`.
 
 The temporary tools are local evidence, not installed application code or automatic CI gates. Archive them with the evidence if a formal exception review is opened; without them and the referenced artifact, counters/digest alone are not a fully reproducible independent audit. Any new dependency graph, build configuration or release artifact needs a fresh assessment. Prior reduction and clean Linux CI evidence remain in [checkpoint 24](24-dependency-reduction-checkpoint.md); general release gates remain in [the recap](22-recapitulacion-y-plan-de-continuidad.md).
+
+Operational follow-up: [synthetic recovery rehearsal and the still-open production backup decision](26-backup-restore-rehearsal.md). It does not change either advisory's status or grant an audit exception.

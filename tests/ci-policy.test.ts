@@ -31,7 +31,7 @@ test('CI is read-only, secret-free and never deploys or suppresses check failure
 
 test('CI retains every existing verification suite and a failing high-severity audit', () => {
   const verification = workflow.jobs.verify!.steps.map(step => step.run ?? '').join('\n')
-  for (const script of ['test:ci', 'typecheck:auth', 'typecheck:finance', 'typecheck:auth:web', 'test:auth', 'test:auth:web', 'test:finance:model', 'test:migration', 'test:chat:behavior', 'test:security:dependencies', 'test:netlify', 'test:finance', 'build:test', 'test:auth:build', 'test:auth:browser', 'build:netlify', 'test:netlify:build']) {
+  for (const script of ['test:ci', 'typecheck:auth', 'typecheck:finance', 'typecheck:auth:web', 'test:auth', 'test:auth:web', 'test:finance:model', 'test:migration', 'test:chat:behavior', 'test:security:dependencies', 'test:netlify', 'test:finance', 'test:backup', 'build:test', 'test:auth:build', 'test:auth:browser', 'build:netlify', 'test:netlify:build']) {
     assert.ok(verification.split('\n').includes(`npm run ${script}`), script)
   }
   for (const job of Object.values(workflow.jobs)) {
@@ -47,8 +47,10 @@ test('CI retains every existing verification suite and a failing high-severity a
 test('CI verifies the emulator before running it and keeps browser execution isolated', () => {
   const steps = workflow.jobs.verify!.steps
   const verified = steps.findIndex(step => step.run?.includes('sha256sum --check --strict'))
-  const integration = steps.findIndex(step => step.run === 'npm run test:finance')
-  assert.ok(verified >= 0 && integration > verified)
+  for (const script of ['test:finance', 'test:backup']) {
+    const integration = steps.findIndex(step => step.run === `npm run ${script}`)
+    assert.ok(verified >= 0 && integration > verified)
+  }
   assert.ok(source.includes('https://storage.googleapis.com/firebase-preview-drop/emulator/cloud-firestore-emulator-v1.22.0.jar'))
   assert.ok(source.includes('9b6498b7f62714d67f48f59b3818883cd682dbcd46b9f59511de81c97bb5166c'))
   assert.ok(source.includes('sha256sum --check --strict'))
