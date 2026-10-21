@@ -47,7 +47,7 @@ test('CI retains every existing verification suite and a failing high-severity a
 test('CI verifies the emulator before running it and keeps browser execution isolated', () => {
   const steps = workflow.jobs.verify!.steps
   const verified = steps.findIndex(step => step.run?.includes('sha256sum --check --strict'))
-  for (const script of ['test:finance', 'test:backup']) {
+  for (const script of ['test:finance', 'test:backup', 'test:merchants:quota']) {
     const integration = steps.findIndex(step => step.run === `npm run ${script}`)
     assert.ok(verified >= 0 && integration > verified)
   }
