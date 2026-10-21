@@ -1,5 +1,7 @@
 # Hackathon AI Architecture
 
+> Historical template architecture, not the current finance release design. The authenticated finance paths now use Firebase Auth/Firestore and Netlify Node Functions; SQLite/D1 and the in-memory approval descriptions below are legacy context. Start with the [current architecture, release scope and continuation checkpoint](seguridad/22-recapitulacion-y-plan-de-continuidad.md).
+
 Hackathon AI is a Nuxt 4 application that helps teams manage Quarterly Rocks, Sprints, and Tasks through a conversational AI assistant. The system combines a modern Vue frontend, a Nitro backend, LangGraph orchestration, Gemini models, and SQLite persistence to support planning, approvals, and document-grounded Q&A.
 
 ## Tech Stack
