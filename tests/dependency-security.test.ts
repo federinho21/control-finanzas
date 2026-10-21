@@ -35,7 +35,7 @@ test('runtime and build lockfile entries contain the reviewed security patches',
   const satisfies = require('semver').satisfies as (version: string, range: string) => boolean
   for (const [path, entry] of Object.entries(lock.packages) as [string, { version: string }][]) {
     for (const [name, range] of Object.entries({
-      undici: '^8.10.2', devalue: '^5.9.3', 'markdown-it': '^14.3.0', 'linkify-it': '^5.0.2',
+      undici: '^8.10.2', devalue: '^5.9.3', 'markdown-it': '^14.3.3', 'linkify-it': '^5.0.2',
       'source-map-js': '^1.2.2', svgo: '^4.1.0', 'prosemirror-view': '^1.42.3', 'brace-expansion': '^2.1.7 || ^5.0.12',
       seroval: '^1.6.3', langsmith: '>=0.6.0 <1.0.0', '@tiptap/core': '^3.30.5',
       'fast-copy': '^4.1.0', 'postcss-selector-parser': '^7.1.6', '@nuxt/ui': '>=4.8.1 <5', '@grpc/grpc-js': '^1.14.6'
@@ -112,6 +112,16 @@ test('chat markdown still escapes HTML, rejects executable links and renders fin
   assert.ok(rendered.includes('&lt;script&gt;'))
   assert.ok(!rendered.includes('<script>'))
   assert.ok(!rendered.includes('<a '))
+})
+
+test('markdown handles bounded unclosed multiline references and preserves valid links', () => {
+  const markdown = new MarkdownIt({ html: false, linkify: false, typographer: false })
+  for (const source of ['[a]: /u "' + 'x\n'.repeat(2000), '[' + 'a\n'.repeat(2000)]) {
+    const output = markdown.render(source)
+    assert.ok(output.startsWith('<p>['))
+    assert.ok(!output.includes('<a '))
+  }
+  assert.equal(markdown.render('[a]: https://example.invalid "Safe"\n\n[a]'), '<p><a href="https://example.invalid" title="Safe">a</a></p>\n')
 })
 
 test('Vue SSR rejects carriage-return attribute names instead of injecting event handlers', () => {
