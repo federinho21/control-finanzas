@@ -84,6 +84,44 @@ function request(path: string, user: string | null = 'A', options: { method?: st
   }, body: options.body === undefined ? undefined : JSON.stringify(options.body) })
 }
 
+test('Firebase Node SDK transport supports owned writes, queries, streams and transactions with patched gRPC', { timeout: 20000 }, async t => {
+  const { initializeApp, deleteApp } = await import('firebase/app')
+  const { initializeFirestore, connectFirestoreEmulator, doc, setDoc, getDocFromServer, getDocsFromServer, collection, query, where, onSnapshot, runTransaction, deleteDoc, terminate } = await import('firebase/firestore')
+  const owner = initializeApp({ projectId: 'demo-control-finanzas', apiKey: 'synthetic' }, 'grpc-transport-owner')
+  const foreign = initializeApp({ projectId: 'demo-control-finanzas', apiKey: 'synthetic' }, 'grpc-transport-foreign')
+  const ownedDb = initializeFirestore(owner, {}), foreignDb = initializeFirestore(foreign, {})
+  const [host, port] = emulator.host.split(':')
+  connectFirestoreEmulator(ownedDb, host!, Number(port), { mockUserToken: { sub: 'grpc-owner' } })
+  connectFirestoreEmulator(foreignDb, host!, Number(port), { mockUserToken: { sub: 'grpc-foreign' } })
+  let unsubscribe: (() => void) | undefined
+  t.after(async () => {
+    unsubscribe?.()
+    await Promise.all([terminate(ownedDb), terminate(foreignDb)])
+    await Promise.all([deleteApp(owner), deleteApp(foreign)])
+  })
+  const payment = doc(ownedDb, 'payments/grpc-transport')
+  await setDoc(payment, { userId: 'grpc-owner', parsed: true, timestamp: Date.now(), amount: 1, currency: 'CRC' })
+  assert.equal((await getDocFromServer(payment)).data()?.amount, 1)
+  const payments = await getDocsFromServer(query(collection(ownedDb, 'payments'), where('userId', '==', 'grpc-owner')))
+  assert.deepEqual(payments.docs.map(record => record.id), ['grpc-transport'])
+  await new Promise<void>((resolve, reject) => {
+    unsubscribe = onSnapshot(payment, { includeMetadataChanges: true }, snapshot => { if (!snapshot.metadata.fromCache && snapshot.data()?.amount === 1) resolve() }, reject)
+  })
+  unsubscribe()
+  unsubscribe = undefined
+  await runTransaction(ownedDb, async transaction => {
+    const snapshot = await transaction.get(payment)
+    transaction.update(payment, { amount: snapshot.data()!.amount + 1 })
+  })
+  assert.equal((await getDocFromServer(payment)).data()?.amount, 2)
+  const denied = (error: unknown) => (error as { code?: string }).code === 'permission-denied'
+  await assert.rejects(getDocFromServer(doc(foreignDb, 'payments/grpc-transport')), denied)
+  await assert.rejects(setDoc(doc(foreignDb, 'payments/grpc-transport'), { userId: 'grpc-foreign', parsed: true, timestamp: Date.now() }), denied)
+  await assert.rejects(getDocFromServer(doc(ownedDb, 'users/grpc-owner/tasks/private')), denied)
+  await deleteDoc(payment)
+  assert.equal((await db.collection('payments').doc('grpc-transport').get()).exists, false)
+})
+
 test('all thirteen finance endpoint methods reject anonymous requests before storage access', async () => {
   for (const [method, path] of [
     ['GET', '/api/rocks'], ['GET', '/api/sprints'], ['GET', '/api/tasks'], ['GET', '/api/cuotas'], ['GET', '/api/dashboard'], ['GET', `/api/resumen?mes=${month}`],

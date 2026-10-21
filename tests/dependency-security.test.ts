@@ -38,10 +38,35 @@ test('runtime and build lockfile entries contain the reviewed security patches',
       undici: '^8.10.2', devalue: '^5.9.3', 'markdown-it': '^14.3.0', 'linkify-it': '^5.0.2',
       'source-map-js': '^1.2.2', svgo: '^4.1.0', 'prosemirror-view': '^1.42.3', 'brace-expansion': '^2.1.7 || ^5.0.12',
       seroval: '^1.6.3', langsmith: '>=0.6.0 <1.0.0', '@tiptap/core': '^3.30.5',
-      'fast-copy': '^4.1.0', 'postcss-selector-parser': '^7.1.6', '@nuxt/ui': '>=4.8.1 <5'
+      'fast-copy': '^4.1.0', 'postcss-selector-parser': '^7.1.6', '@nuxt/ui': '>=4.8.1 <5', '@grpc/grpc-js': '^1.14.6'
     })) {
       if (path.endsWith(`node_modules/${name}`)) assert.ok(satisfies(entry.version, range), `${path}: ${entry.version}`)
     }
+  }
+})
+
+test('Firestore-resolved gRPC does not expose thrown server errors to clients', async () => {
+  const grpc = createRequire(require.resolve('@firebase/firestore'))('@grpc/grpc-js')
+  const serialize = (value: string) => Buffer.from(value)
+  const deserialize = (value: Buffer) => value.toString()
+  const server = new grpc.Server()
+  let client: { close(): void } | undefined
+  try {
+    server.addService({ crash: { path: '/security/Crash', requestStream: false, responseStream: false, requestSerialize: serialize, requestDeserialize: deserialize, responseSerialize: serialize, responseDeserialize: deserialize } }, {
+      crash() { throw new Error('synthetic-private-server-detail') }
+    })
+    const port = await new Promise<number>((resolve, reject) => server.bindAsync('127.0.0.1:0', grpc.ServerCredentials.createInsecure(), (error: Error | null, port: number) => error ? reject(error) : resolve(port)))
+    server.start()
+    const connection = new grpc.Client(`127.0.0.1:${port}`, grpc.credentials.createInsecure())
+    client = connection
+    const error = await new Promise<{ code: number; details: string }>((resolve, reject) => {
+      connection.makeUnaryRequest('/security/Crash', serialize, deserialize, 'synthetic', { deadline: Date.now() + 5000 }, (error: { code: number; details: string } | null) => error ? resolve(error) : reject(new Error('Expected failed RPC')))
+    })
+    assert.equal(error.code, grpc.status.UNKNOWN)
+    assert.ok(!error.details.includes('synthetic-private-server-detail'), 'Thrown server details must not reach RPC clients')
+  } finally {
+    client?.close()
+    server.forceShutdown()
   }
 })
 
