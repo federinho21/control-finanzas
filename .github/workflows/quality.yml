@@ -61,12 +61,15 @@ jobs:
           npm run test:auth
           npm run test:auth:web
           npm run test:finance:model
+          npm run test:merchants
           npm run test:migration
           npm run test:chat:behavior
           npm run test:security:dependencies
           npm run test:netlify
       - name: Synthetic Firestore integration tests
-        run: npm run test:finance
+        run: |
+          npm run test:finance
+          npm run test:merchants:quota
       - name: Synthetic export and fresh-emulator restore rehearsal
         run: npm run test:backup
       - name: Install the pinned Playwright browser
@@ -75,6 +78,7 @@ jobs:
         run: |
           npm run build:test
           npm run test:auth:build
+          npm run test:merchants:build
           npm run test:auth:browser
       - name: Compile Netlify without deploying
         run: |

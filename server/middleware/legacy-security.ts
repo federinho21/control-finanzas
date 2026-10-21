@@ -9,6 +9,7 @@ export function createLegacyGate(user: typeof requireUser, origin: typeof requir
     } catch { throw createError({ statusCode: 400, statusMessage: 'Invalid request path.' }) }
     if (!path.startsWith('/api')) return
     if (path === '/api/auth/me' || path === '/api/auth/session') return
+    if (path === '/api/mobile/merchant-search' && event.method === 'POST') return
     if (/^\/api\/_nuxt_icon\/[a-z0-9_-]+(?:\.json)?$/.test(path) && ['GET', 'HEAD'].includes(event.method)) return
     await user(event)
     if (!['GET', 'HEAD'].includes(event.method)) origin(event)

@@ -43,6 +43,7 @@ useHead({ title: 'Iniciar sesión · Control Finanzas' })
       <UButton v-if="auth.error.value && !auth.logoutUnconfirmed.value" block variant="ghost" :disabled="auth.busy.value" @click="retrySession">
         Comprobar sesión nuevamente
       </UButton>
+      <p class="text-sm text-slate-300"><a href="https://logo.dev" target="_blank" rel="noopener noreferrer" class="underline">Logos provided by Logo.dev</a></p>
     </section>
   </main>
 </template>
