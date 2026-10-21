@@ -35,9 +35,9 @@
   },
   "dependencies": {
     "@cloudflare/d1": "^1.4.1",
-    "@langchain/core": "^1.1.41",
+    "@langchain/core": "^1.1.49",
     "@langchain/google-genai": "^2.1.28",
-    "@langchain/langgraph": "^1.2.9",
+    "@langchain/langgraph": "^1.5.1",
     "@langchain/textsplitters": "^1.0.1",
     "@nuxt/fonts": "^0.11.4",
     "@nuxt/ui": "^4.12.0",

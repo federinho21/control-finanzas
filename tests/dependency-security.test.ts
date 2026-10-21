@@ -40,7 +40,7 @@ test('runtime and build lockfile entries contain the reviewed security patches',
       'source-map-js': '^1.2.2', svgo: '^4.1.0', 'prosemirror-view': '^1.42.3', 'brace-expansion': '^2.1.7 || ^5.0.12',
       seroval: '^1.6.3', langsmith: '>=0.6.0 <1.0.0', '@tiptap/core': '^3.30.5',
       'fast-copy': '^4.1.0', 'postcss-selector-parser': '^7.1.6', '@nuxt/ui': '>=4.8.1 <5', '@grpc/grpc-js': '^1.14.6',
-      'launch-editor': '^2.14.2', vite: '>=8.2.4 <8.3.0 || ^8.3.3'
+      'launch-editor': '^2.14.2', vite: '>=8.2.4 <8.3.0 || ^8.3.3', uuid: '^11.1.1 || ^12.0.1 || ^13.0.1 || >=14'
     })) {
       if (path.endsWith(`node_modules/${name}`)) assert.ok(satisfies(entry.version, range), `${path}: ${entry.version}`)
     }
