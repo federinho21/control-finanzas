@@ -3,11 +3,25 @@ import { generateKeyPairSync, randomUUID } from 'node:crypto'
 import { mkdtemp, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { Server } from 'node:net'
 import { test } from 'node:test'
 import { Firestore, Timestamp, type CollectionReference } from 'firebase-admin/firestore'
 import { startFirestoreEmulator } from './firestore-emulator'
 import { FinanceRepository } from '../server/repositories/finance'
 import { costaRicaDate, cuotaInput, movementInput } from '../server/repositories/finance-model'
+
+test('emulator API port stays reserved until its distinct websocket port is allocated', { timeout: 60000 }, async t => {
+  const listen = Server.prototype.listen
+  const listeners: Server[] = []
+  t.mock.method(Server.prototype, 'listen', function (this: Server, ...args: Parameters<Server['listen']>) {
+    if (listeners.length === 1) assert.equal(listeners[0]!.listening, true, 'The API reservation must stay open while allocating the websocket port.')
+    listeners.push(this)
+    return listen.apply(this, args)
+  })
+  const emulator = await startFirestoreEmulator()
+  t.after(() => emulator.stop())
+  assert.equal(listeners.length, 2)
+})
 
 test('missing or non-file restore metadata fails before starting an emulator', async () => {
   await assert.rejects(startFirestoreEmulator(fileURLToPath(new URL('./', import.meta.url))), /export metadata file/)

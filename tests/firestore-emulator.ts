@@ -12,14 +12,15 @@ export async function startFirestoreEmulator(seedFromExport?: string) {
   if (!jars.length) throw new Error('Download the official Firestore emulator using Firebase CLI before running this test.')
   const root = process.platform === 'win32' ? join(process.env.LOCALAPPDATA!, 'Temp', 'opencode') : tmpdir()
   const directory = await mkdtemp(join(root, 'finanzas-firestore-test-'))
-  async function freePort() {
-    const socket = createServer()
-    await new Promise<void>(resolve => socket.listen(0, '127.0.0.1', resolve))
-    const port = (socket.address() as { port: number }).port
-    await new Promise<void>(resolve => socket.close(() => resolve()))
-    return port
+  const sockets = [createServer(), createServer()]
+  let port: number, websocket: number
+  try {
+    for (const socket of sockets) await new Promise<void>((resolve, reject) => { socket.once('error', reject); socket.listen(0, '127.0.0.1', resolve) })
+    port = (sockets[0]!.address() as { port: number }).port
+    websocket = (sockets[1]!.address() as { port: number }).port
+  } finally {
+    await Promise.all(sockets.filter(socket => socket.listening).map(socket => new Promise<void>(resolve => socket.close(() => resolve()))))
   }
-  const port = await freePort(), websocket = await freePort()
   const java = process.env.JAVA_HOME ? join(process.env.JAVA_HOME, 'bin', process.platform === 'win32' ? 'java.exe' : 'java') : 'java'
   const child = spawn(java, ['-jar', join(cache, jars[jars.length - 1]!), '--host', '127.0.0.1', '--port', String(port), '--websocket_port', String(websocket), '--project_id', 'demo-control-finanzas', '--single_project_mode', '--single_project_mode_error', '--rules', resolve('firestore.rules'), ...(seed ? ['--seed_from_export', seed] : [])], { cwd: directory, stdio: ['ignore', 'pipe', 'pipe'] })
   let output = ''
@@ -27,7 +28,7 @@ export async function startFirestoreEmulator(seedFromExport?: string) {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`Firestore startup timed out: ${output}`)), 45000)
       child.once('error', error => { clearTimeout(timer); reject(error) })
-      child.once('exit', code => { clearTimeout(timer); reject(new Error(`Firestore exited (${code}): ${output}`)) })
+      child.once('exit', code => { clearTimeout(timer); reject(new Error(`Firestore exited (${code}), API ${port}, websocket ${websocket}: ${output}`)) })
       const ready = (chunk: Buffer) => {
         output += chunk.toString()
         if (output.includes('Dev App Server is now running')) { clearTimeout(timer); resolve() }
