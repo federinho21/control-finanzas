@@ -1,5 +1,7 @@
 # Control Finanzas — recapitulación y continuidad
 
+> Actualización posterior: el [checkpoint de reducción de dependencias](24-dependency-reduction-checkpoint.md) registra los parches ya confirmados, los **11 avisos altos restantes** (sin críticos/moderados/bajos), la verificación de la instalación completa y el intento de Nuxt descartado. Este documento conserva la fotografía anterior de 18 avisos y trabajo sin commit como historial, no como estado vigente de dependencias.
+
 **Corte: 20 de octubre de 2026, Costa Rica.** Esta es la entrada de estado actual; los documentos 01–21 conservan el historial de cada incremento. Sus cifras, instrucciones de hosting y pendientes corresponden a su fecha y no reemplazan este corte.
 
 ## 1. Objetivo y alcance acordado
