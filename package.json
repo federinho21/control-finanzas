@@ -25,7 +25,7 @@
     "typecheck:auth:web": "vue-tsc --project tests/tsconfig.web.json",
     "test:auth:browser": "playwright test --config tests/playwright.config.ts",
     "typecheck:auth": "tsc --project tests/tsconfig.auth.json",
-    "test:auth:build": "tsx tests/auth-build.smoke.ts",
+    "test:auth:build": "tsx --test tests/auth-smoke-lifecycle.test.ts",
     "build": "nuxt build",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
