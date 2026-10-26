@@ -333,7 +333,7 @@ export async function generateProposedPlan(input: {
 
   const model = new ChatGoogleGenerativeAI({
     apiKey,
-    model: 'gemini-3.6-flash',
+    model: 'gemini-3.1-flash-lite',
     temperature: 0.2
   })
 
@@ -400,7 +400,7 @@ ${input.message}
 
   let content = ''
   try {
-    const response = await model.invoke(prompt)
+    const response = await model.invoke(prompt, { signal: AbortSignal.timeout(45000) })
     content = String(response.content)
   } catch {
     throw new Error('Strategy plan generation failed: unable to get a response from the LLM.')

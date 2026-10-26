@@ -1,7 +1,5 @@
-import { eq } from 'drizzle-orm'
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
-import { db } from '~~/server/db'
-import { rocks, sprints } from '~~/server/db/schema'
+import { getAgentRepository } from '../repositories/agent'
 import { useGeminiApiKey } from '~~/server/composables/useGeminiApiKey'
 import type { ProposedTask } from '~~/shared/types/task'
 import { normalizeDateToUser } from '~~/shared/utils/date'
@@ -45,6 +43,7 @@ function fallbackTasks(sprintStart: string, sprintEnd: string): ProposedTask[] {
  * @throws Error if rock ID or sprint ID is missing, or entities don't exist
  */
 export async function generateProposedTasks(input: {
+  uid: string
   message: string
   rockId?: string
   sprintId?: string
@@ -53,8 +52,8 @@ export async function generateProposedTasks(input: {
     throw new Error('Include IDs in the message to plan tasks. Example: Break down R-AB12 for S-CD34')
   }
 
-  const rock = await db.query.rocks.findFirst({ where: eq(rocks.id, input.rockId) })
-  const sprint = await db.query.sprints.findFirst({ where: eq(sprints.id, input.sprintId) })
+  const rock = await getAgentRepository().getRock(input.uid, input.rockId)
+  const sprint = await getAgentRepository().getSprint(input.uid, input.sprintId)
 
   if (!rock) {
     throw new Error(`Rock ${input.rockId} does not exist`)
@@ -77,7 +76,7 @@ export async function generateProposedTasks(input: {
 
     const model = new ChatGoogleGenerativeAI({
       apiKey,
-      model: 'gemini-3.6-flash',
+      model: 'gemini-3.1-flash-lite',
       temperature: 0.2
     })
 
@@ -108,7 +107,7 @@ Account:
 User request: ${input.message}
 `
 
-    const response = await model.invoke(prompt)
+    const response = await model.invoke(prompt, { signal: AbortSignal.timeout(45000) })
     const content = String(response.content)
     const jsonText = content.match(/\{[\s\S]*\}/)?.[0]
 
@@ -117,9 +116,9 @@ User request: ${input.message}
     }
 
     const parsed = JSON.parse(jsonText) as { tasks?: ProposedTask[] }
-    const tasks = (parsed.tasks ?? [])
+    const tasks: ProposedTask[] = (parsed.tasks ?? [])
       .slice(0, 6)
-      .flatMap((task) => {
+      .flatMap<ProposedTask>((task) => {
         try {
           const rawMonto = String(task.monto ?? '0').replace(',', '.')
           return [{

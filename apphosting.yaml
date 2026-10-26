@@ -1,0 +1,18 @@
+scripts:
+  buildCommand: npm run build
+  runCommand: node .output/server/index.mjs
+runConfig:
+  minInstances: 0
+  maxInstances: 2
+  concurrency: 20
+  cpu: 1
+  memoryMiB: 1024
+env:
+  - variable: NITRO_PRESET
+    value: node-server
+    availability:
+      - BUILD
+  - variable: NUXT_GEMINI_API_KEY
+    secret: gemini-api-key
+    availability:
+      - RUNTIME

@@ -5,8 +5,7 @@ declare const process: {
 
 import tailwindcss from '@tailwindcss/vite'
 
-// When building for Cloudflare Workers, swap the DB driver to D1.
-const cfBuild = process.env.DEPLOY_TARGET === 'cloudflare'
+if (process.env.DEPLOY_TARGET === 'cloudflare' || process.env.NITRO_PRESET === 'netlify_edge') throw new Error('Firebase Admin requires Node. Use Netlify Functions, not Workers or Edge Functions.')
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
@@ -17,15 +16,11 @@ export default defineNuxtConfig({
     fallback: 'dark',
     classSuffix: '',
   },
-  nitro: cfBuild
-    ? {
-        preset: 'cloudflare_pages',
-        alias: {
-          '~~/server/db/schema': '~~/server/db/schema',
-          '~~/server/db': '~~/server/db-cf'
-        }
-      }
-    : undefined,
+  nitro: {
+    preset: process.env.NITRO_PRESET === 'netlify' || process.env.NETLIFY === 'true' ? 'netlify' : 'node-server',
+    externals: { inline: ['firebase-admin', 'jwks-rsa', 'jose'] },
+    commonJS: { requireReturnsDefault: 'preferred', ignoreTryCatch: false }
+  },
   fonts: {
     families: [
       {
@@ -52,6 +47,14 @@ export default defineNuxtConfig({
     }
   },
   runtimeConfig: {
-    geminiApiKey: process.env.GEMINI_API_KEY
+    geminiApiKey: process.env.GEMINI_API_KEY,
+    public: {
+      firebase: {
+        apiKey: '',
+        authDomain: '',
+        projectId: '',
+        appId: ''
+      }
+    }
   }
 })

@@ -4,6 +4,8 @@ import type { ProposedPlan } from '~~/shared/types/plan'
 import type { ProposedTask } from '~~/shared/types/task'
 import { normalizeDateToDb } from '~~/shared/utils/date'
 import { usePlanPreview } from '~/composables/usePlanPreview'
+import { SessionChangedError } from '~/utils/web-session'
+import { AI_ENABLED } from '~~/shared/finance-release'
 
 // Parses buffered SSE chunks into JSON events and keeps incomplete data for the next read.
 function parseSseChunk(buffer: string): { events: Array<Record<string, any>>; rest: string } {
@@ -43,7 +45,9 @@ function buildWelcomeMessage(): ChatMessage {
     id: nanoid(),
     role: 'assistant',
     isWelcome: true,
-    content:
+    content: !AI_ENABLED
+      ? `👋 ¡Hola, **Fede**! Soy tu **Asistente Financiero**.\n🕐 Hoy es **${nowCr}** en Costa Rica.\n\n**¿En qué te puedo ayudar hoy?**\n\nLa IA está desactivada en esta versión. Para registrar movimientos y gestionar cuotas, usa **Finanzas**; para gráficos, **Dashboard**.\n\nPuedes consultar sin IA:\n• «¿Cuánto gasté este mes?»\n• «¿Cuánto ingresé el mes pasado?»\n• «¿Cuál es mi saldo en 2026-09?»\n• «Gastos por categoría este mes»\n\nLos presupuestos automáticos, el registro por texto libre, los análisis y los adjuntos no están disponibles. No se eliminaron tus datos.`
+      :
       `👋 ¡Hola, **Fede**! Soy tu **Asistente Financiero**.\n🕐 Hoy es **${nowCr}** en Costa Rica.\n\n**¿En qué te puedo ayudar hoy?**\n\n📋 **Presupuesto**\n• Describe un objetivo mensual y genero un plan de presupuesto completo (cuenta → períodos → movimientos)\n• Genera movimientos para una cuenta y período existentes\n• Mientras revisas el plan, pídeme modificarlo (ej. "agrega un período" o "quita el último movimiento")\n\n✅ **Movimientos**\n• Registra un gasto/ingreso/retiro y lo clasifico por categoría\n• Consulta el resumen del mes: "muéstrame el balance de 2026-08"\n• Marca un movimiento como pagado\n\n🔁 **Cuotas fijas**\n• Registra suscripciones: \`create cuota | Netflix | mensual | 5000 | Streaming\`\n• Marca una cuota como pagada (se registra como gasto automáticamente)\n\n🔍 **Consultas & RAG**\n• "Cuéntame sobre R-0001" o "¿Qué hay en S-0003?"\n• Sube un .txt o .pdf (factura, extracto bancario) y pregúntale por su contenido\n\n📈 **Análisis mensual**\n• Pide un análisis del mes (ej. "generate retro for S-0001")\n\n⚡ **Ejemplos**\n• "Crea un presupuesto para agosto"\n• "Cuéntame sobre R-0001"\n• "Marca la cuota U-0001 como pagada"`,
     createdAt: new Date().toISOString()
   }
@@ -55,8 +59,10 @@ function buildWelcomeMessage(): ChatMessage {
  * @returns An object containing chat state arrays, pending status, and methods to send messages and submit actions.
  */
 export function useChat() {
+  const auth = useAuth()
   const sessionId = useState<string>('chat-session-id', () => crypto.randomUUID())
   const messages = useState<ChatMessage[]>('chat-messages', () => [buildWelcomeMessage()])
+  if (!messages.value.length) messages.value = [buildWelcomeMessage()]
   const pending = useState<boolean>('chat-pending', () => false)
   const reconnecting = useState<boolean>('chat-reconnecting', () => false)
 
@@ -65,10 +71,17 @@ export function useChat() {
 
   // Sends a chat request and processes streamed SSE events into UI state updates.
   async function streamRequest(payload: Record<string, unknown>) {
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: sessionId.value, ...payload })
+    const version = auth.version()
+    const response = await auth.request(async signal => {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        credentials: 'include',
+        signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: sessionId.value, ...payload })
+      })
+      if (response.status === 401) throw Object.assign(new Error('Unauthorized.'), { statusCode: 401 })
+      return response
     })
 
     if (!response.ok || !response.body) {
@@ -81,6 +94,7 @@ export function useChat() {
 
     while (true) {
       const { done, value } = await reader.read()
+      if (version !== auth.version()) throw new SessionChangedError()
       if (done) {
         break
       }
@@ -90,7 +104,11 @@ export function useChat() {
       buffer = parsed.rest
 
       for (const event of parsed.events) {
+        if (version !== auth.version()) throw new SessionChangedError()
         if (event.type === 'result') {
+          if (typeof event.resolvedActionId === 'string') {
+            for (const message of messages.value) message.actions = message.actions?.filter(action => action.actionId !== event.resolvedActionId)
+          }
           const chatMessage: ChatMessage = {
             id: nanoid(),
             role: 'assistant',
@@ -110,7 +128,7 @@ export function useChat() {
 
           const actionRequest = event.actionRequest as
             | {
-                type: 'approve_tasks' | 'confirm_delete' | 'approve_plan' | 'update_sprint_status' | 'update_task_status'
+                type: 'approve_tasks' | 'confirm_delete' | 'approve_plan' | 'update_sprint_status' | 'update_task_status' | 'approve_movement'
                 actionId: string
                 prompt: string
                 entityId?: string
@@ -126,7 +144,12 @@ export function useChat() {
               await navigateTo('/preview')
             } else {
               const actions =
-                actionRequest.type === 'approve_tasks'
+                actionRequest.type === 'approve_movement'
+                ? [
+                    { type: 'approve_movement' as const, actionId: actionRequest.actionId, label: 'Confirmar movimiento', color: 'success' as const },
+                    { type: 'cancel_movement' as const, actionId: actionRequest.actionId, label: 'Cancelar movimiento', color: 'neutral' as const }
+                  ]
+                : actionRequest.type === 'approve_tasks'
                 ? [
                     {
                       type: 'approve_tasks' as const,
@@ -176,6 +199,7 @@ export function useChat() {
             }
           }
 
+          if (version !== auth.version()) throw new SessionChangedError()
           messages.value.push(chatMessage)
 
           if (event.refreshBacklog) {
@@ -217,6 +241,7 @@ export function useChat() {
 
   // Sends a user message and streams assistant updates into the conversation timeline.
   async function sendMessage(message: string) {
+    const version = auth.version()
     const trimmed = message.trim()
     if (!trimmed || pending.value) {
       return
@@ -235,6 +260,7 @@ export function useChat() {
       reconnecting.value = false
       await streamRequest({ message: trimmed })
     } catch (error) {
+      if (version !== auth.version()) return
       reconnecting.value = true
       messages.value.push({
         id: nanoid(),
@@ -243,16 +269,17 @@ export function useChat() {
         createdAt: new Date().toISOString()
       })
     } finally {
-      pending.value = false
+      if (version === auth.version()) pending.value = false
     }
   }
 
   // Submits a pending UI action back to the assistant workflow.
   async function submitAction(action: {
-    type: 'approve_tasks' | 'confirm_delete' | 'approve_plan' | 'update_sprint_status' | 'update_task_status'
+    type: 'approve_tasks' | 'confirm_delete' | 'approve_plan' | 'cancel_plan' | 'cancel_tasks' | 'update_sprint_status' | 'update_task_status' | 'approve_movement' | 'cancel_movement'
     actionId: string
     payload?: Record<string, unknown>
   }, editedTasks?: ProposedTask[], editedPlan?: ProposedPlan) {
+    const version = auth.version()
     if (pending.value) {
       return false
     }
@@ -283,8 +310,9 @@ export function useChat() {
                 : action.payload
         }
       })
-      return true
+      return version === auth.version()
     } catch (error) {
+      if (version !== auth.version()) return false
       messages.value.push({
         id: nanoid(),
         role: 'error',
@@ -293,7 +321,7 @@ export function useChat() {
       })
       return false
     } finally {
-      pending.value = false
+      if (version === auth.version()) pending.value = false
     }
   }
 

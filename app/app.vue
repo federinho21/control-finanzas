@@ -1,4 +1,6 @@
 <script setup lang="ts">
+const route = useRouter().currentRoute
+const auth = useAuth()
 // Force dark mode: sets the `dark` class on <html> and pins the color mode so
 // the night palette is applied on both SSR and client.
 const colorMode = useColorMode()
@@ -19,11 +21,12 @@ useHead({
 
 <template>
   <div class="app-shell">
-    <AppSidebar class="hidden lg:flex" />
-    <div class="app-main">
-      <NuxtPage />
+    <AppSidebar v-if="auth.user.value && route.path !== '/login'" class="hidden lg:flex" />
+    <div class="app-main" :class="{ 'is-login': route.path === '/login' }">
+      <NuxtPage v-if="route.path === '/login' || (auth.ready.value && auth.user.value)" :key="auth.user.value?.uid ?? 'signed-out'" />
+      <p v-else role="status" class="p-6 text-slate-300">Comprobando sesión…</p>
     </div>
-    <MobileNav class="lg:hidden" />
+    <MobileNav v-if="auth.user.value && route.path !== '/login'" class="lg:hidden" />
   </div>
 </template>
 
@@ -42,7 +45,7 @@ useHead({
 }
 
 @media (max-width: 1023px) {
-  .app-main {
+  .app-main:not(.is-login) {
     padding-bottom: 64px;
   }
 }

@@ -3,6 +3,8 @@ import type { Task } from '~~/shared/types/task'
 import { normalizeDateToUser } from '~~/shared/utils/date'
 
 const props = defineProps<{ movements: Task[] }>()
+const api = useApi()
+const toast = useToast()
 
 const fmt = (n: string) => '₡' + Number(n).toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -17,10 +19,9 @@ function tipoInfo(tipo: string) {
 }
 
 async function onDelete(task: Task) {
-  const { $toast } = useNuxtApp()
-  await $fetch(`/api/tasks/${task.id}`, { method: 'DELETE' }).catch(() => null)
+  const result = await api<{ ok: boolean; sourceRetained?: boolean }>(`/api/tasks/${task.id}`, { method: 'DELETE' })
   emit('refresh')
-  $toast?.add?.({ title: 'Movimiento eliminado', color: 'primary' })
+  toast.add({ title: result.sourceRetained ? 'Movimiento ocultado; el original de Android se conserva' : 'Movimiento eliminado', color: 'primary' })
 }
 
 const emit = defineEmits<{ (e: 'refresh'): void }>()
@@ -52,7 +53,7 @@ const emit = defineEmits<{ (e: 'refresh'): void }>()
           <td class="px-4 py-2.5 text-sm text-slate-400">{{ task.owner }}</td>
           <td class="px-4 py-2.5 text-sm font-semibold text-right text-slate-100">{{ fmt(task.monto) }}</td>
           <td class="px-2 py-2.5 text-right">
-            <UButton icon="i-lucide-trash-2" color="neutral" variant="ghost" size="xs" @click="onDelete(task)" />
+            <UButton icon="i-lucide-trash-2" aria-label="Retirar movimiento" color="neutral" variant="ghost" size="xs" @click="onDelete(task)" />
           </td>
         </tr>
         <tr v-if="!props.movements.length">
@@ -82,7 +83,7 @@ const emit = defineEmits<{ (e: 'refresh'): void }>()
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <span class="text-sm font-bold text-slate-100">{{ fmt(task.monto) }}</span>
-        <UButton icon="i-lucide-trash-2" color="neutral" variant="ghost" size="xs" @click="onDelete(task)" />
+        <UButton icon="i-lucide-trash-2" aria-label="Retirar movimiento" color="neutral" variant="ghost" size="xs" @click="onDelete(task)" />
       </div>
     </div>
     <p v-if="!props.movements.length" class="text-center text-sm text-slate-400 py-6">Sin movimientos este mes.</p>

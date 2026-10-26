@@ -1,0 +1,68 @@
+# Chat answer quality — first corrective slice
+
+## Reproduced behavior
+
+With Fede's approval, ran 15 questions through the real LangGraph workflow and live Gemini `gemini-3.1-flash-lite`, using ONLY synthetic users/payments in the local Firestore emulator. Baseline: income CRC 1,000, expenses CRC 300, balance CRC 700, four owned movements and one foreign sentinel payment. Source fixtures remained unchanged; no foreign sentinel appeared in responses. This was not a production browser/authentication test.
+
+Confirmed issues: relative months were rejected; monthly answers mixed English/Spanish and always repeated all totals; category/advice questions were sent to document search; recent movements and natural-language registration demanded internal IDs; cuota listing did not identify paid/pending state; classifier failure could generate an unsolicited budget proposal. Greeting/thanks worked; explicit-month totals were numerically correct; requested budgets remained proposals with approval. No claim of broad security sign-off follows from these examples.
+
+## Implemented scope
+
+- Classifier failure ALWAYS asks for clarification and ends. Message length no longer permits fallback budget generation.
+- Monthly totals resolve explicit `YYYY-MM`, `este mes`/`this month`, and `mes pasado`/`mes anterior`/`last month` using the existing Costa Rica date. Previous January crosses the year boundary. Invalid, day-specific and ambiguous multi-month requests ask for clarification rather than silently selecting a period.
+- Spanish answers address Fede, give the requested income/expense/withdrawal/balance metric, preserve full totals for summaries/multi-metric questions, and disclose excluded records.
+- Monthly totals do not pretend to answer category/store breakdowns; unsupported breakdown questions explicitly direct the user to the dashboard.
+- Existing verified UID, repository ownership filters, approval rules and SSE events remain unchanged. No remote financial writes or resource configuration are part of this slice.
+
+## Verification
+
+`npm run test:chat:behavior`: six regression tests cover safe fallback, relative dates/year boundaries, invalid/ambiguous periods, accent handling, exact totals, multi-metric answers, exclusions and unsupported category breakdowns. The initial regression run failed before the behavior changes. No tests were removed/skipped.
+
+Live repeat: 16 synthetic questions, including the previous-month case. Current/previous month and explicit income/balance queries now return the expected periods and values without proposals. The category probe exposed an overly broad total-only answer during development; a subsequent deterministic guard and regression prevent that misrepresentation. The read/foreign-record probe returned not found instead of generating a budget in this sample. This is stochastic acceptance evidence, not a guaranteed latency/intent result.
+
+After the category guard, four focused live graph checks returned the expected current-month expense, previous-month expense, balance and explicit category limitation in 926–1,457 ms, without proposals or source-record changes.
+
+Also passed: 27 emulator integration tests, finance typecheck, Netlify build and 15 compiled route checks plus plain-Node cold-start/Firestore checks. Build log: `C:\Users\Fede\AppData\Local\Temp\opencode\finanzas-chat-read-slice1-build.log`. Synthetic FAQ evidence stays in the approved temp directory, not production storage.
+
+## Remaining capabilities
+
+Balance-aware spending guidance, consistent Spanish for all other paths, and follow-up conversation context remain separate slices. Conversational registration with confirmation is covered in [the dedicated approval contract](14-conversational-movements.md). Complete cuota history and due-date scheduling are not implemented by the current status report. Dependency security, real two-user acceptance, PDFs/Storage and runtime limits remain production launch gates.
+
+## Narrow read-only routing without Gemini
+
+Live classifier latency remains variable; six-second timeouts safely refuse changes but were also preventing ordinary reports. Added an anchored, accent/case/whitespace-tolerant shortcut for a SMALL allowlist of complete Spanish questions: `Cuánto gasté/ingresé/recibí/retiré`, `Cuál es mi saldo/balance`, `Resumen mensual`, `Gastos por categoría` and `En qué categoría gasté más`, followed by `este mes`, `el mes pasado`/`mes pasado` or `en YYYY-MM`.
+
+These requests route directly to the existing `monthly_report`/`category_report` data operation, before pending-plan lookup or model access. The data operation retains exact-money calculations, Costa Rica month resolution/validation and verified-owner scoping. No values are extracted from a model, no default dates are invented, and no proposals, confirmations or financial records are created. Typed confirmations still cannot approve actions. This is not a general regex classifier: filters, comparisons, negation, IDs, other languages and compound instructions do not match and retain the existing classification/clarification path. Even an invalid `YYYY-MM` reaches existing validation, not an unvalidated query.
+
+Verification: 19 chat behavior tests passed, including eight recognized request forms and twelve excluded/ambiguous forms. The recognized cases call actual `detectIntent` with no configured database/model fixture, proving the early bypass. The existing 32-test Firestore suite now also runs the real LangGraph for owned monthly/category questions against synthetic owner/foreign fixtures; it returns CRC 0.30 without foreign data, action requests, plans, refresh signals, anchors or pending approvals. Before/after financial and cuota snapshots stay unchanged. Finance typecheck, Netlify build and 15 compiled route checks passed. No UI or SSE contract changed.
+
+Evidence: `finanzas-readonly-fastpath-integration.log` and `finanzas-readonly-fastpath-netlify-build.log` under the approved temp root. This improves availability for the listed read requests only; it does not resolve Gemini latency for conversational drafts or other specialist flows.
+
+## Second corrective slice — categories and recent movements
+
+Added internal classifier/data operations `category_report` and `recent_movements`. Existing graph forwarding and UID-scoped `loadMovements` are reused; no new public endpoint, schema migration, IAM permission, index or dependency is needed.
+
+- Categories use only recorded expenses, sum integer minor units, rank descending with deterministic ties, and default to the current Costa Rica month. Income/withdrawals do not enter expense category totals. Display is capped at 20 categories with an explicit truncation notice.
+- Recent movements default to five across eligible recorded history, accept an explicit/current/previous month and a classifier-extracted integer limit (including requests using number words). The backend validates 1–20 independently. Date/creation time determines order; the response states actual displayed/available counts and period.
+- Unsupported/ambiguous periods ask for clarification. Exclusions remain disclosed; stored merchant/category text is escaped as plain Markdown content to avoid injected links/images. Merchant-specific and movement-type-only list filters are not implemented; the classifier is instructed to clarify those requests rather than invent filtering.
+- The legacy monthly formatter's explicit category limitation remains as a safe response if the model incorrectly chooses the totals-only operation.
+
+The data handler additionally refuses known type/category/store-filtered recent-list requests and income/withdrawal category reports if the classifier selects these operations anyway; it does not present unfiltered records or expense-only totals as filtered answers. Emulator assertions cover these guards.
+
+Verification: 10 behavior tests and 28 emulator integration tests passed, including a new real-repository test proving no foreign data with an injected payload UID, exact category arithmetic, recent count/order, invalid-limit rejection and unchanged payment fixtures. Finance typecheck passed. Seven live Gemini + local-emulator questions returned the expected category ranking (CRC 150/100/50), recent counts (five requested/four available, two requested), explicit month, rejection of a 100-item request, previous-month emptiness and the existing balance. No proposals or foreign sentinel were exposed; all source fixtures stayed unchanged. These synthetic responses took 877–3,281 ms.
+
+The first local build reached Nitro completion but exceeded its 300-second command limit during packaging. A retry with a 600-second limit succeeded; all 15 compiled route checks and the plain-Node cold-start/Firestore initialization regressions passed. Retry log: `C:\Users\Fede\AppData\Local\Temp\opencode\finanzas-chat-read-slice2-build-retry.log`. Authenticated preview behavior still requires Fede's browser acceptance after the branch deploy. No financial records were changed in the real Firebase project.
+
+After adding the unsupported-filter guards, the final build, 28 integration tests, compiled smoke checks and typecheck passed again. Final build log: `C:\Users\Fede\AppData\Local\Temp\opencode\finanzas-chat-read-slice2-build-final.log`.
+
+## Third corrective slice — current cuota status
+
+The existing `list_cuotas` operation now formats owner-scoped data in Spanish and distinguishes active pending/paid, paused and review-required rows. Monthly coverage uses the current Costa Rica month; annual coverage uses the current year. Paused cuotas and invalid/future payment dates or invalid amounts do not enter active pending totals. The requested monthly/annual frequency and common paid/unpaid/paused wording are filtered deterministically. Merchant/name text is escaped and lists above 20 disclose the displayed limit.
+
+Amounts remain separated by monthly/annual frequency and are labelled current selected active cuota amounts, not overdue debt. No due dates or complete historical state are inferred from `ultimoPago`. Non-current or unsupported periods receive an explicit limitation. This formatter does not consume or reconstruct the separate cuota-payment ledger. No payment state is changed by a status question.
+
+Live acceptance exposed a distinction that the original fixture expectations missed: an annual cuota last paid in January must not be presented as a payment made this month. The stronger regression now requires its exclusion from explicit current-month paid queries, while including annual cuotas actually last paid in the current month; current-year annual coverage remains supported separately. Last-payment dates are displayed to make that distinction visible. This is a current-record/last-payment query, not a full cashflow or historical payment-amount report.
+
+Verification: 15 behavior tests (five new cuota groups) and 28 emulator integration tests passed. The integration test seeds owned paid/pending/paused cuotas and a foreign cuota, attempts payload UID injection, and proves owner-only answers and unchanged records. Tests also cover negated paid wording, invalid periods, invalid dates/amounts, separate exact-cent subtotals, escaping and display limits. Finance typecheck, final Netlify build and 15 compiled route checks plus cold-start/Firestore regressions passed. Build log: `C:\Users\Fede\AppData\Local\Temp\opencode\finanzas-chat-cuotas-final-build.log`.
+
+Seven live Gemini + emulator probes covered pending, paid this month, not paid, paused, annual paid this year, missing due dates and unavailable history. The final probes took 960–1,602 ms, produced no proposals and left every synthetic cuota/payment unchanged; the historical query asked for clarification rather than inventing a payment history. Subsequent presentation-only changes omit irrelevant zero-frequency/paused totals and pending explanations on paid-only lists. No real Firebase records, IAM, rules, indexes or production deployment were changed. Fede must still accept the deployed status answers in his browser.

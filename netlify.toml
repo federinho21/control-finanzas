@@ -1,0 +1,8 @@
+[build]
+  command = "npm run build:netlify"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "24"
+  NPM_FLAGS = "--ignore-scripts --include=dev"
+  NITRO_PRESET = "netlify"
