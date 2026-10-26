@@ -21,6 +21,19 @@ export async function startTestServer() {
     },
     stdio: ['ignore', 'pipe', 'pipe']
   })
+  let closed = false
+  child.once('close', () => { closed = true })
+  async function stop() {
+    if (closed) return
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL')
+        reject(new Error('Owned test server did not close within 10 seconds.'))
+      }, 10000)
+      child.once('close', () => { clearTimeout(timer); resolve() })
+      if (child.exitCode === null && child.signalCode === null) child.kill()
+    })
+  }
   let output = ''
   try {
     await new Promise<void>((resolve, reject) => {
@@ -37,5 +50,5 @@ export async function startTestServer() {
     child.kill()
     throw error
   }
-  return { url, directory, stop: () => child.kill() }
+  return { url, directory, stop }
 }

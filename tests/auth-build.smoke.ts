@@ -37,5 +37,5 @@ try {
   console.log('PASS: compiled AI refusal and 15 Nitro auth/page/API/asset checks; no Firebase calls or production data access.')
   console.log(`Isolated test directory: ${server.directory}`)
 } finally {
-  server.stop()
+  await server.stop()
 }

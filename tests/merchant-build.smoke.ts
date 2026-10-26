@@ -14,4 +14,4 @@ try {
   assert.equal(response.status, 401)
   assert.equal(response.headers.get('cache-control'), 'no-store')
   console.log('PASS: compiled merchant route rejects anonymous/cookie requests; attribution is on the public login page.')
-} finally { server.stop() }
+} finally { await server.stop() }

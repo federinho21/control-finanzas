@@ -1,6 +1,23 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
+import { startTestServer } from './start-test-server'
+import { assertCompiledAiPolicy } from './compiled-ai-policy'
+
+test('compiled policy probe does not initialize Nitro in the test runner', async () => {
+  const previous = Reflect.get(globalThis, '$fetch')
+  await assertCompiledAiPolicy('.output/server')
+  assert.equal(Reflect.get(globalThis, '$fetch'), previous)
+})
+
+test('fixture shutdown waits for its owned server to close', async t => {
+  const server = await startTestServer()
+  t.after(() => server.stop())
+  const stopped = server.stop()
+  assert.ok(stopped instanceof Promise, 'Shutdown must wait for process close, not just send a signal.')
+  await stopped
+  await assert.rejects(fetch(server.url + '/api/auth/me', { signal: AbortSignal.timeout(1000) }))
+})
 
 test('compiled auth checks consume every response body before shutdown', async t => {
   const responses: Response[] = []

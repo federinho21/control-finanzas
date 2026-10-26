@@ -3,7 +3,7 @@ import { startTestServer } from './start-test-server'
 
 let server: Awaited<ReturnType<typeof startTestServer>>
 test.beforeAll(async () => { server = await startTestServer() })
-test.afterAll(() => { server?.stop() })
+test.afterAll(async () => { await server?.stop() })
 
 async function mockSession(page: Page, initialUser: string | null) {
   const state = { uid: null as string | null, logoutFails: false, chatExpired: false }
