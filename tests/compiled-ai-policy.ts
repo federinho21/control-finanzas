@@ -12,14 +12,25 @@ export async function assertCompiledAiPolicy(directory: string) {
   const module = pathToFileURL(resolve(chunks, definitions[0]!.file)).href
   const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict'
-    console.error('AI probe: importing compiled boundary')
-    const compiled = await import(${JSON.stringify(module)})
-    console.error('AI probe: import complete', process.getActiveResourcesInfo())
-    const getter = Object.values(compiled).find(value => typeof value === 'function' && value.name === 'useGeminiApiKey')
-    assert.ok(getter, 'Compiled Gemini key boundary must be accessible to the smoke check.')
-    assert.throws(getter, error => error.statusCode === 503 && error.data?.message?.includes('IA está desactivada') === true)
-    console.error('AI probe: assertion complete', process.getActiveResourcesInfo())
-    setTimeout(() => console.error('AI probe: remaining resources', process.getActiveResourcesInfo()), 1000)
+    import { Server } from 'node:net'
+    import { once } from 'node:events'
+    const listen = Server.prototype.listen, servers = new Set()
+    Server.prototype.listen = function (...args) {
+      servers.add(this)
+      return listen.call(this, { host: '127.0.0.1', port: 0 }, args.findLast(value => typeof value === 'function'))
+    }
+    try {
+      const compiled = await import(${JSON.stringify(module)})
+      const getter = Object.values(compiled).find(value => typeof value === 'function' && value.name === 'useGeminiApiKey')
+      assert.ok(getter, 'Compiled Gemini key boundary must be accessible to the smoke check.')
+      assert.throws(getter, error => error.statusCode === 503 && error.data?.message?.includes('IA está desactivada') === true)
+    } finally {
+      Server.prototype.listen = listen
+      await Promise.all([...servers].map(async server => {
+        if (!server.listening) await once(server, 'listening')
+        await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+      }))
+    }
   `], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', env: { ...process.env, NODE_OPTIONS: '', NODE_ENV: 'production', FIREBASE_PROJECT_ID: '', FIREBASE_SERVICE_ACCOUNT_JSON: '', GOOGLE_APPLICATION_CREDENTIALS: '', GEMINI_API_KEY: '', NUXT_GEMINI_API_KEY: '' } })
   assert.equal(result.error, undefined, `Compiled AI probe did not exit naturally: ${result.error?.message}\n${result.stderr}`)
   assert.equal(result.status, 0, result.stderr)

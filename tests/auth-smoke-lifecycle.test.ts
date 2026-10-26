@@ -3,6 +3,23 @@ import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 import { startTestServer } from './start-test-server'
 import { assertCompiledAiPolicy } from './compiled-ai-policy'
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+
+test('compiled probe closes listeners created by an imported server entry', async () => {
+  const root = process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'Temp', 'opencode') : tmpdir()
+  const directory = await mkdtemp(join(root, 'finanzas-probe-listener-'))
+  await mkdir(join(directory, 'chunks'))
+  await writeFile(join(directory, 'chunks', 'entry.mjs'), `
+    import { createServer } from 'node:http'
+    createServer().listen(0, '127.0.0.1')
+    export function useGeminiApiKey() {
+      throw Object.assign(new Error('AI disabled'), { statusCode: 503, data: { message: 'IA está desactivada' } })
+    }
+  `)
+  await assertCompiledAiPolicy(directory)
+})
 
 test('compiled policy probe does not initialize Nitro in the test runner', async () => {
   const previous = Reflect.get(globalThis, '$fetch')
